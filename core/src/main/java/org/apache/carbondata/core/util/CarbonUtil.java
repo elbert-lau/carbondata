@@ -88,8 +88,6 @@ import org.apache.carbondata.core.statusmanager.LoadMetadataDetails;
 import org.apache.carbondata.core.statusmanager.SegmentStatus;
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager;
 import org.apache.carbondata.core.statusmanager.SegmentUpdateStatusManager;
-import org.apache.carbondata.core.util.comparator.Comparator;
-import org.apache.carbondata.core.util.comparator.SerializableComparator;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.format.BlockletHeader;
 import org.apache.carbondata.format.DataChunk2;
@@ -100,6 +98,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.input.ClassLoaderObjectInputStream;
 import org.apache.commons.lang.ArrayUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
@@ -560,7 +559,7 @@ public final class CarbonUtil {
   }
 
   /**
-   * From beeline if a delimeter is passed as \001, in code we get it as
+   * From beeline if a delimiter is passed as \001, in code we get it as
    * escaped string as \\001. So this method will unescape the slash again and
    * convert it back t0 \001
    *
@@ -744,7 +743,7 @@ public final class CarbonUtil {
         created = FileFactory.mkdirs(path, fileType);
       }
     } catch (IOException e) {
-      LOGGER.error(e.getMessage());
+      LOGGER.error(e.getMessage(), e);
     }
     return created;
   }
@@ -765,7 +764,7 @@ public final class CarbonUtil {
         created = true;
       }
     } catch (IOException e) {
-      LOGGER.error(e);
+      LOGGER.error(e.getMessage(), e);
     }
     return created;
   }
@@ -1446,7 +1445,7 @@ public final class CarbonUtil {
       stream.flush();
       thriftByteArray = stream.toByteArray();
     } catch (TException | IOException e) {
-      LOGGER.error("Error while converting to byte array from thrift object: " + e.getMessage());
+      LOGGER.error("Error while converting to byte array from thrift object: " + e.getMessage(), e);
       closeStreams(stream);
     } finally {
       closeStreams(stream);
@@ -1536,10 +1535,11 @@ public final class CarbonUtil {
     ValueEncoderMeta meta = null;
     try {
       aos = new ByteArrayInputStream(encoderMeta);
-      objStream = new ObjectInputStream(aos);
+      objStream =
+          new ClassLoaderObjectInputStream(Thread.currentThread().getContextClassLoader(), aos);
       meta = (ValueEncoderMeta) objStream.readObject();
     } catch (ClassNotFoundException e) {
-      LOGGER.error(e);
+      LOGGER.error(e.getMessage(), e);
     } catch (IOException e) {
       CarbonUtil.closeStreams(objStream);
     }
@@ -2177,7 +2177,11 @@ public final class CarbonUtil {
         return DataTypes.FLOAT;
       case BYTE:
         return DataTypes.BYTE;
+      case BINARY:
+        return DataTypes.BINARY;
       default:
+        LOGGER.warn(String.format("Cannot match the data type, using default String data type: %s",
+            DataTypes.STRING.getName()));
         return DataTypes.STRING;
     }
   }
@@ -2188,9 +2192,14 @@ public final class CarbonUtil {
     CarbonFile segment = FileFactory.getCarbonFile(path, configuration);
 
     CarbonFile[] dataFiles = segment.listFiles();
+    CarbonFile latestCarbonFile = null;
+    long latestDatafileTimestamp = 0L;
+    // get the latest carbondatafile to get the latest schema in the folder
     for (CarbonFile dataFile : dataFiles) {
-      if (dataFile.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT)) {
-        return dataFile.getAbsolutePath();
+      if (dataFile.getName().endsWith(CarbonCommonConstants.FACT_FILE_EXT)
+          && dataFile.getLastModifiedTime() > latestDatafileTimestamp) {
+        latestCarbonFile = dataFile;
+        latestDatafileTimestamp = dataFile.getLastModifiedTime();
       } else if (dataFile.isDirectory()) {
         // if the list has directories that doesn't contain data files,
         // continue checking other files/directories in the list.
@@ -2201,8 +2210,13 @@ public final class CarbonUtil {
         }
       }
     }
-    //returning null only if the path doesn't have data files.
-    return null;
+
+    if (latestCarbonFile != null) {
+      return latestCarbonFile.getAbsolutePath();
+    } else {
+      //returning null only if the path doesn't have data files.
+      return null;
+    }
   }
 
   /**
@@ -2372,9 +2386,8 @@ public final class CarbonUtil {
       return b.array();
     } else if (DataTypes.isDecimal(dataType)) {
       return DataTypeUtil.bigDecimalToByte((BigDecimal) value);
-    } else if (dataType == DataTypes.BYTE_ARRAY) {
-      return (byte[]) value;
-    } else if (dataType == DataTypes.STRING
+    } else if (dataType == DataTypes.BYTE_ARRAY || dataType == DataTypes.BINARY
+        || dataType == DataTypes.STRING
         || dataType == DataTypes.DATE
         || dataType == DataTypes.VARCHAR) {
       return (byte[]) value;
@@ -2811,51 +2824,6 @@ public final class CarbonUtil {
               + " as the block size on HDFS");
     }
     return maxSize;
-  }
-
-  /**
-   * This method will be used to update the min and max values and this will be used in case of
-   * old store where min and max values for measures are written opposite
-   * (i.e max values in place of min and min in place of max values)
-   *
-   * @param dataFileFooter
-   * @param maxValues
-   * @param minValues
-   * @param isMinValueComparison
-   * @return
-   */
-  public static byte[][] updateMinMaxValues(DataFileFooter dataFileFooter, byte[][] maxValues,
-      byte[][] minValues, boolean isMinValueComparison) {
-    byte[][] updatedMinMaxValues = new byte[maxValues.length][];
-    if (isMinValueComparison) {
-      System.arraycopy(minValues, 0, updatedMinMaxValues, 0, minValues.length);
-    } else {
-      System.arraycopy(maxValues, 0, updatedMinMaxValues, 0, maxValues.length);
-    }
-    for (int i = 0; i < maxValues.length; i++) {
-      // update min and max values only for measures
-      if (!dataFileFooter.getColumnInTable().get(i).isDimensionColumn()) {
-        DataType dataType = dataFileFooter.getColumnInTable().get(i).getDataType();
-        SerializableComparator comparator = Comparator.getComparator(dataType);
-        int compare;
-        if (isMinValueComparison) {
-          compare = comparator
-              .compare(DataTypeUtil.getMeasureObjectFromDataType(maxValues[i], dataType),
-                  DataTypeUtil.getMeasureObjectFromDataType(minValues[i], dataType));
-          if (compare < 0) {
-            updatedMinMaxValues[i] = maxValues[i];
-          }
-        } else {
-          compare = comparator
-              .compare(DataTypeUtil.getMeasureObjectFromDataType(minValues[i], dataType),
-                  DataTypeUtil.getMeasureObjectFromDataType(maxValues[i], dataType));
-          if (compare > 0) {
-            updatedMinMaxValues[i] = minValues[i];
-          }
-        }
-      }
-    }
-    return updatedMinMaxValues;
   }
 
   /**
@@ -3337,5 +3305,21 @@ public final class CarbonUtil {
    */
   public static String generateUUID() {
     return UUID.randomUUID().toString();
+  }
+
+  /**
+   * Below method will be used to get the datamap schema name from datamap table name
+   * it will split name based on character '_' and get the last name
+   * This is only for pre aggregate and timeseries tables
+   *
+   * @param tableName
+   * @return datamapschema name
+   */
+  public static String getDatamapNameFromTableName(String tableName) {
+    int i = tableName.lastIndexOf('_');
+    if (i != -1) {
+      return tableName.substring(i + 1, tableName.length());
+    }
+    return null;
   }
 }

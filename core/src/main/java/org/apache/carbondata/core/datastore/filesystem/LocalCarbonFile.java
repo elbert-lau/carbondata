@@ -168,7 +168,7 @@ public class LocalCarbonFile implements CarbonFile {
   }
 
   @Override
-  public List<CarbonFile> listFiles(Boolean recurssive) {
+  public List<CarbonFile> listFiles(Boolean recursive) {
     if (!file.isDirectory()) {
       return new ArrayList<CarbonFile>();
     }
@@ -254,7 +254,7 @@ public class LocalCarbonFile implements CarbonFile {
       tempFile.renameForce(fileName);
       fileTruncatedSuccessfully = true;
     } catch (IOException e) {
-      LOGGER.error("Exception occured while truncating the file " + e.getMessage());
+      LOGGER.error("Exception occured while truncating the file " + e.getMessage(), e);
     } finally {
       CarbonUtil.closeStreams(source, destination);
     }

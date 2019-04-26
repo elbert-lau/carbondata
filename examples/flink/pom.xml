@@ -57,7 +57,7 @@
     </dependency>
     <dependency>
       <groupId>org.apache.carbondata</groupId>
-      <artifactId>carbondata-examples-spark2</artifactId>
+      <artifactId>carbondata-examples</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>
@@ -74,5 +74,13 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>sdvtest</id>
+      <properties>
+        <maven.test.skip>true</maven.test.skip>
+      </properties>
+    </profile>
+  </profiles>
 
 </project>

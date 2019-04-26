@@ -22,10 +22,6 @@ import java.util
 import java.util.concurrent.{Callable, ExecutorService, Executors, TimeUnit}
 
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration.Duration
-import scala.util.{Failure, Success}
 
 import org.apache.spark.sql.{AnalysisException, CarbonDatasourceHadoopRelation, Row}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -210,8 +206,8 @@ class TestPreAggCreateCommand extends QueryTest with BeforeAndAfterAll {
     sql("create datamap agg0 on table mainTable using 'preaggregate' as select column3, sum(column3),column5, sum(column5) from maintable group by column3,column5")
     val df = sql("select * from maintable_agg0")
     val carbontable = getCarbonTable(df.queryExecution.analyzed)
-    assert(carbontable.getAllMeasures.size()==2)
-    assert(carbontable.getAllDimensions.size()==2)
+    assert(carbontable.getAllMeasures.size()==3)
+    assert(carbontable.getAllDimensions.size()==1)
     carbontable.getAllDimensions.asScala.foreach{ f =>
       assert(!f.getEncoder.contains(Encoding.DICTIONARY))
     }
@@ -222,8 +218,8 @@ class TestPreAggCreateCommand extends QueryTest with BeforeAndAfterAll {
     sql("create datamap agg0 on table mainTable using 'preaggregate' as select column3, sum(column3),column5, sum(column5) from maintable group by column3,column5,column2")
     val df = sql("select * from maintable_agg0")
     val carbontable = getCarbonTable(df.queryExecution.analyzed)
-    assert(carbontable.getAllMeasures.size()==2)
-    assert(carbontable.getAllDimensions.size()==3)
+    assert(carbontable.getAllMeasures.size()==3)
+    assert(carbontable.getAllDimensions.size()==2)
     carbontable.getAllDimensions.asScala.foreach{ f =>
       assert(!f.getEncoder.contains(Encoding.DICTIONARY))
     }
@@ -485,48 +481,6 @@ class TestPreAggCreateCommand extends QueryTest with BeforeAndAfterAll {
     executorService.awaitTermination(5, TimeUnit.MINUTES)
     checkExistence(sql("show tables"), true, "agg_concu1", "tbl_concurr")
     executorService.shutdown()
-  }
-
-  test("support set carbon.query.directQueryOnDataMap.enabled=true") {
-    val rootPath = new File(this.getClass.getResource("/").getPath
-      + "../../../..").getCanonicalPath
-    val testData = s"$rootPath/integration/spark-common-test/src/test/resources/sample.csv"
-    sql("drop table if exists mainTable")
-    sql(
-      s"""
-         | CREATE TABLE mainTable
-         |   (id Int,
-         |   name String,
-         |   city String,
-         |   age Int)
-         | STORED BY 'org.apache.carbondata.format'
-      """.stripMargin)
-
-    sql(
-      s"""
-         | LOAD DATA LOCAL INPATH '$testData'
-         | into table mainTable
-       """.stripMargin)
-
-    sql(
-      s"""
-         | create datamap preagg_sum on table mainTable
-         | using 'preaggregate'
-         | as select id,sum(age) from mainTable group by id
-       """.stripMargin)
-
-    CarbonProperties.getInstance()
-      .addProperty(CarbonCommonConstants.VALIDATE_DIRECT_QUERY_ON_DATAMAP, "true")
-
-    sql("set carbon.query.directQueryOnDataMap.enabled=true")
-    checkAnswer(sql("select count(*) from maintable_preagg_sum"), Row(4))
-    sql("set carbon.query.directQueryOnDataMap.enabled=false")
-    val exception: Exception = intercept[AnalysisException] {
-      sql("select count(*) from maintable_preagg_sum").collect()
-    }
-    assert(exception.getMessage.contains("Query On DataMap not supported"))
-    CarbonProperties.getInstance()
-      .addProperty(CarbonCommonConstants.VALIDATE_DIRECT_QUERY_ON_DATAMAP, "false")
   }
 
   class QueryTask(query: String) extends Callable[String] {

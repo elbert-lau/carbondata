@@ -91,7 +91,10 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
       LOGGER.info("Blocklet size configure for table is: " + blockletSizeThreshold);
     }
     blockletDataHolder = new BlockletDataHolder(fallbackExecutorService, model);
-    isSorted = model.getSortScope() != NO_SORT;
+    if (model.getSortScope() != null) {
+      isSorted = model.getSortScope() != NO_SORT;
+    }
+    LOGGER.info("Sort Scope : " + model.getSortScope());
   }
 
   @Override
@@ -328,6 +331,13 @@ public class CarbonFactDataWriterImplV3 extends AbstractFactDataWriter {
         new BlockletInfo3(encodedBlocklet.getBlockletSize(), currentDataChunksOffset,
             currentDataChunksLength, dimensionOffset, measureOffset,
             encodedBlocklet.getNumberOfPages());
+    // Avoid storing as integer in encodedBocklet,
+    // but in thrift store as int for large number of rows future support
+    List<Integer> rowList = new ArrayList<>(encodedBlocklet.getRowCountInPage().size());
+    for (int rows : encodedBlocklet.getRowCountInPage()) {
+      rowList.add(rows);
+    }
+    blockletInfo3.setRow_count_in_page(rowList);
     blockletMetadata.add(blockletInfo3);
   }
 

@@ -18,19 +18,16 @@
 package org.apache.carbondata.core.scan.model;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.carbondata.core.cache.dictionary.Dictionary;
-import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonColumn;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
-import org.apache.carbondata.core.mutate.UpdateVO;
 import org.apache.carbondata.core.scan.expression.ColumnExpression;
 import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.UnknownExpression;
@@ -92,15 +89,6 @@ public class QueryModel {
 
   private DataTypeConverter converter;
 
-  /**
-   * Invalid table blocks, which need to be removed from
-   * memory, invalid blocks can be segment which are deleted
-   * or compacted
-   */
-  private List<String> invalidSegmentIds;
-  private Map<String, UpdateVO> invalidSegmentBlockIdMap =
-      new HashMap<>(CarbonCommonConstants.DEFAULT_COLLECTION_SIZE);
-
   private boolean[] isFilterDimensions;
   private boolean[] isFilterMeasures;
 
@@ -135,7 +123,6 @@ public class QueryModel {
 
   private QueryModel(CarbonTable carbonTable) {
     tableBlockInfos = new ArrayList<TableBlockInfo>();
-    invalidSegmentIds = new ArrayList<>();
     this.table = carbonTable;
     this.queryId = String.valueOf(System.nanoTime());
   }
@@ -145,29 +132,33 @@ public class QueryModel {
   }
 
   public static void processFilterExpression(FilterProcessVO processVO, Expression filterExpression,
-      final boolean[] isFilterDimensions, final boolean[] isFilterMeasures) {
+      final boolean[] isFilterDimensions, final boolean[] isFilterMeasures,
+      CarbonTable carbonTable) {
     if (null != filterExpression) {
       if (null != filterExpression.getChildren() && filterExpression.getChildren().size() == 0) {
         if (filterExpression instanceof ConditionalExpression) {
           List<ColumnExpression> listOfCol =
               ((ConditionalExpression) filterExpression).getColumnList();
           for (ColumnExpression expression : listOfCol) {
-            setDimAndMsrColumnNode(processVO, expression, isFilterDimensions, isFilterMeasures);
+            setDimAndMsrColumnNode(processVO, expression, isFilterDimensions, isFilterMeasures,
+                carbonTable);
           }
         }
       }
       for (Expression expression : filterExpression.getChildren()) {
         if (expression instanceof ColumnExpression) {
           setDimAndMsrColumnNode(processVO, (ColumnExpression) expression, isFilterDimensions,
-              isFilterMeasures);
+              isFilterMeasures, carbonTable);
         } else if (expression instanceof UnknownExpression) {
           UnknownExpression exp = ((UnknownExpression) expression);
           List<ColumnExpression> listOfColExpression = exp.getAllColumnList();
           for (ColumnExpression col : listOfColExpression) {
-            setDimAndMsrColumnNode(processVO, col, isFilterDimensions, isFilterMeasures);
+            setDimAndMsrColumnNode(processVO, col, isFilterDimensions, isFilterMeasures,
+                carbonTable);
           }
         } else {
-          processFilterExpression(processVO, expression, isFilterDimensions, isFilterMeasures);
+          processFilterExpression(processVO, expression, isFilterDimensions, isFilterMeasures,
+              carbonTable);
         }
       }
     }
@@ -184,7 +175,7 @@ public class QueryModel {
   }
 
   private static void setDimAndMsrColumnNode(FilterProcessVO processVO, ColumnExpression col,
-      boolean[] isFilterDimensions, boolean[] isFilterMeasures) {
+      boolean[] isFilterDimensions, boolean[] isFilterMeasures, CarbonTable table) {
     CarbonDimension dim;
     CarbonMeasure msr;
     String columnName;
@@ -209,13 +200,25 @@ public class QueryModel {
       if (null != isFilterMeasures) {
         isFilterMeasures[msr.getOrdinal()] = true;
       }
-    } else {
+    } else if (null != CarbonUtil.findDimension(processVO.getImplicitDimensions(), columnName)) {
       // check if this is an implicit dimension
-      dim = CarbonUtil
-          .findDimension(processVO.getImplicitDimensions(), columnName);
+      dim = CarbonUtil.findDimension(processVO.getImplicitDimensions(), columnName);
       col.setCarbonColumn(dim);
       col.setDimension(dim);
       col.setDimension(true);
+    } else {
+      // in case of sdk or fileformat, there can be chance that each carbondata file may have
+      // different schema, so every segment properties will have dims and measures based on
+      // corresponding segment. So the filter column may not be present in it. so generate the
+      // dimension and measure from the carbontable
+      CarbonDimension dimension =
+          table.getDimensionByName(table.getTableName(), col.getColumnName());
+      CarbonMeasure measure = table.getMeasureByName(table.getTableName(), col.getColumnName());
+      col.setDimension(dimension);
+      col.setMeasure(measure);
+      col.setCarbonColumn(dimension == null ? measure : dimension);
+      col.setDimension(null != dimension);
+      col.setMeasure(null != measure);
     }
   }
 
@@ -334,29 +337,12 @@ public class QueryModel {
     this.statisticsRecorder = statisticsRecorder;
   }
 
-  public List<String> getInvalidSegmentIds() {
-    return invalidSegmentIds;
-  }
-
-  public void setInvalidSegmentIds(List<String> invalidSegmentIds) {
-    this.invalidSegmentIds = invalidSegmentIds;
-  }
-
   public boolean isVectorReader() {
     return vectorReader;
   }
 
   public void setVectorReader(boolean vectorReader) {
     this.vectorReader = vectorReader;
-  }
-  public void setInvalidBlockForSegmentId(List<UpdateVO> invalidSegmentTimestampList) {
-    for (UpdateVO anUpdateVO : invalidSegmentTimestampList) {
-      this.invalidSegmentBlockIdMap.put(anUpdateVO.getSegmentId(), anUpdateVO);
-    }
-  }
-
-  public Map<String,UpdateVO>  getInvalidBlockVOForSegmentId() {
-    return  invalidSegmentBlockIdMap;
   }
 
   public DataTypeConverter getConverter() {

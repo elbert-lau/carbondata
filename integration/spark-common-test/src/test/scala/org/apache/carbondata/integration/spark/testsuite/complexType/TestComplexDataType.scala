@@ -106,6 +106,31 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
       Seq(Row(1, "abc", Row(mutable.WrappedArray.make(Array("abc", "bcd"))), "bcd")))
   }
 
+  test("test Projection PushDown for Array - String type when Array is Empty") {
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.CARBON_BAD_RECORDS_ACTION, "FAIL")
+    sql("drop table if exists table1")
+    sql("create table table1 (detail array<string>) stored by 'carbondata'")
+    sql("insert into table1 values('')")
+    checkAnswer(sql("select detail[0] from table1"), Seq(Row("")))
+    sql("drop table if exists table1")
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.CARBON_BAD_RECORDS_ACTION, badRecordAction)
+  }
+
+  test("test Projection PushDown for Struct - Array type when Array is Empty") {
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.CARBON_BAD_RECORDS_ACTION, "FAIL")
+    sql("drop table if exists table1")
+    sql("create table table1 (person struct<detail:array<string>,age:int>) stored by 'carbondata'")
+    sql("insert into table1 values ('\0011')")
+    checkAnswer(sql("select person.detail[0] from table1"), Seq(Row("")))
+    checkAnswer(sql("select person.age from table1"), Seq(Row(1)))
+    sql("drop table if exists table1")
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.CARBON_BAD_RECORDS_ACTION, badRecordAction)
+  }
+
   test("test Projection PushDown for Struct - Double type") {
     sql("DROP TABLE IF EXISTS table1")
     sql(
@@ -821,7 +846,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
       "'carbondata' tblproperties('dictionary_exclude'='a.b')"))
     assertResult(
       "DICTIONARY_EXCLUDE column: a.b does not exist in table or unsupported for complex child " +
-      "column. Please check create table statement.")(
+      "column. Please check the create table statement.")(
       structException.getMessage)
     sql("DROP TABLE IF EXISTS table1")
     val arrayException = intercept[MalformedCarbonCommandException](
@@ -831,7 +856,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
         "'carbondata' tblproperties('dictionary_exclude'='a[0]')"))
     assertResult(
       "DICTIONARY_EXCLUDE column: a[0] does not exist in table or unsupported for complex child " +
-      "column. Please check create table statement.")(
+      "column. Please check the create table statement.")(
       arrayException.getMessage)
   }
 
@@ -845,7 +870,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
         "'carbondata' tblproperties('dictionary_include'='a.b')"))
     assertResult(
       "DICTIONARY_INCLUDE column: a.b does not exist in table or unsupported for complex child " +
-      "column. Please check create table statement.")(
+      "column. Please check the create table statement.")(
       structException.getMessage)
     sql("DROP TABLE IF EXISTS table1")
     val arrayException = intercept[MalformedCarbonCommandException](
@@ -855,7 +880,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
         "'carbondata' tblproperties('dictionary_include'='a[0]')"))
     assertResult(
       "DICTIONARY_INCLUDE column: a[0] does not exist in table or unsupported for complex child " +
-      "column. Please check create table statement.")(
+      "column. Please check the create table statement.")(
       arrayException.getMessage)
   }
 
@@ -877,7 +902,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
     checkExistence(sql("select * from table1"),true,"2.9E9")
   }
 
-  test("test block compaction - auto merge") {
+  test("test compaction - auto merge") {
     sql("DROP TABLE IF EXISTS table1")
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.ENABLE_AUTO_LOAD_MERGE, "true")
@@ -904,7 +929,7 @@ class TestComplexDataType extends QueryTest with BeforeAndAfterAll {
       "/Struct.csv' into table table1 options('delimiter'=','," +
       "'quotechar'='\"','fileheader'='roll,person','complex_delimiter_level_1'='$'," +
       "'complex_delimiter_level_2'='&')")
-    checkExistence(sql("show segments for table table1"),false, "Compacted")
+    checkExistence(sql("show segments for table table1"),true, "Compacted")
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.ENABLE_AUTO_LOAD_MERGE, "false")
   }

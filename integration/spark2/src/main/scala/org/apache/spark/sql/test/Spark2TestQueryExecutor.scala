@@ -59,7 +59,12 @@ object Spark2TestQueryExecutor {
     FileFactory.getConfiguration.
       set("dfs.client.block.write.replace-datanode-on-failure.policy", "NEVER")
   }
-  val metastoredb = s"$integrationPath/spark-common-cluster-test/target"
+
+  if (System.getProperty("spark.hadoop.hive.metastore.uris") != null) {
+    conf.set("spark.hadoop.hive.metastore.uris",
+      System.getProperty("spark.hadoop.hive.metastore.uris"))
+  }
+  val metaStoreDB = s"$integrationPath/spark-common-cluster-test/target"
   val spark = SparkSession
     .builder().config(conf)
     .master(TestQueryExecutor.masterUrl)
@@ -67,7 +72,7 @@ object Spark2TestQueryExecutor {
     .enableHiveSupport()
     .config("spark.sql.warehouse.dir", warehouse)
     .config("spark.sql.crossJoin.enabled", "true")
-    .getOrCreateCarbonSession(null, TestQueryExecutor.metastoredb)
+    .getOrCreateCarbonSession(null, TestQueryExecutor.metaStoreDB)
   if (warehouse.startsWith("hdfs://")) {
     System.setProperty(CarbonCommonConstants.HDFS_TEMP_LOCATION, warehouse)
     CarbonProperties.getInstance().addProperty(CarbonCommonConstants.LOCK_TYPE,

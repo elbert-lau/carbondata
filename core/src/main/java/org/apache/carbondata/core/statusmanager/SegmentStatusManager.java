@@ -176,7 +176,7 @@ public class SegmentStatusManager {
         }
       }
     } catch (IOException e) {
-      LOG.error(e);
+      LOG.error(e.getMessage(), e);
       throw e;
     }
     return new ValidAndInvalidSegmentsInfo(listOfValidSegments, listOfValidUpdatedSegments,
@@ -356,7 +356,7 @@ public class SegmentStatusManager {
         if (listOfLoadFolderDetailsArray.length != 0) {
           updateDeletionStatus(identifier, loadIds, listOfLoadFolderDetailsArray, invalidLoadIds);
           if (invalidLoadIds.isEmpty()) {
-            // All or None , if anything fails then dont write
+            // All or None , if anything fails then don't write
             if (carbonTableStatusLock.lockWithRetries()) {
               LOG.info("Table status lock has been successfully acquired");
               // To handle concurrency scenarios, always take latest metadata before writing
@@ -391,7 +391,7 @@ public class SegmentStatusManager {
         throw new Exception(errorMsg + " Please try after some time.");
       }
     } catch (IOException e) {
-      LOG.error("IOException" + e.getMessage());
+      LOG.error("IOException" + e.getMessage(), e);
       throw e;
     } finally {
       CarbonLockUtil.fileUnlock(carbonTableStatusLock, LockUsage.TABLE_STATUS_LOCK);
@@ -472,7 +472,7 @@ public class SegmentStatusManager {
         throw new Exception(errorMsg + " Please try after some time.");
       }
     } catch (IOException e) {
-      LOG.error("Error message: " + "IOException" + e.getMessage());
+      LOG.error("Error message: " + "IOException" + e.getMessage(), e);
       throw e;
     } finally {
       CarbonLockUtil.fileUnlock(carbonTableStatusLock, LockUsage.TABLE_STATUS_LOCK);

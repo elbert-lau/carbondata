@@ -99,7 +99,7 @@ public class LoadMetadataDetails implements Serializable {
   private static final Logger LOGGER =
       LogServiceFactory.getLogService(LoadMetadataDetails.class.getName());
 
-  // dont remove static as the write will fail.
+  // don't remove static as the write will fail.
   private static final SimpleDateFormat parser =
       new SimpleDateFormat(CarbonCommonConstants.CARBON_TIMESTAMP_MILLIS);
   /**
@@ -257,8 +257,8 @@ public class LoadMetadataDetails implements Serializable {
         dateToStr = parser.parse(factTimeStamp);
         return dateToStr.getTime();
       } catch (ParseException e) {
-        LOGGER
-            .error("Cannot convert" + factTimeStamp + " to Time/Long type value" + e.getMessage());
+        LOGGER.error("Cannot convert" + factTimeStamp + " to Time/Long type value"
+            + e.getMessage(), e);
         parser = new SimpleDateFormat(CarbonCommonConstants.CARBON_TIMESTAMP);
         try {
           // if the load is in progress, factTimeStamp will be null, so use current time
@@ -293,7 +293,7 @@ public class LoadMetadataDetails implements Serializable {
         return dateToStr.getTime() * 1000;
       } catch (ParseException e) {
         LOGGER.error("Cannot convert" + loadStartTime +
-            " to Time/Long type value" + e.getMessage());
+            " to Time/Long type value" + e.getMessage(), e);
         return null;
       }
     }

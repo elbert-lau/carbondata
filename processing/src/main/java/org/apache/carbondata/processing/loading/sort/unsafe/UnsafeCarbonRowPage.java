@@ -28,6 +28,7 @@ import org.apache.carbondata.core.memory.UnsafeSortMemoryManager;
 import org.apache.carbondata.core.util.ReUsableByteArrayDataOutputStream;
 import org.apache.carbondata.processing.loading.row.IntermediateSortTempRow;
 import org.apache.carbondata.processing.loading.sort.SortStepRowHandler;
+import org.apache.carbondata.processing.sort.SortTempRowUpdater;
 import org.apache.carbondata.processing.sort.sortdata.TableFieldStat;
 
 /**
@@ -42,8 +43,6 @@ public class UnsafeCarbonRowPage {
 
   private MemoryBlock dataBlock;
 
-  private boolean saveToDisk;
-
   private MemoryManagerType managerType;
 
   private String taskId;
@@ -52,17 +51,19 @@ public class UnsafeCarbonRowPage {
   private SortStepRowHandler sortStepRowHandler;
   private boolean convertNoSortFields;
 
+  private SortTempRowUpdater sortTempRowUpdater;
+
   public UnsafeCarbonRowPage(TableFieldStat tableFieldStat, MemoryBlock memoryBlock,
-      boolean saveToDisk, String taskId) {
+      String taskId) {
     this.tableFieldStat = tableFieldStat;
     this.sortStepRowHandler = new SortStepRowHandler(tableFieldStat);
-    this.saveToDisk = saveToDisk;
     this.taskId = taskId;
     buffer = new IntPointerBuffer(this.taskId);
     this.dataBlock = memoryBlock;
     // TODO Only using 98% of space for safe side.May be we can have different logic.
     sizeToBeUsed = dataBlock.size() - (dataBlock.size() * 5) / 100;
     this.managerType = MemoryManagerType.UNSAFE_MEMORY_MANAGER;
+    this.sortTempRowUpdater = tableFieldStat.getSortTempRowUpdater();
   }
 
   public int addRow(Object[] row,
@@ -96,8 +97,10 @@ public class UnsafeCarbonRowPage {
    */
   public IntermediateSortTempRow getRow(long address) {
     if (convertNoSortFields) {
-      return sortStepRowHandler
+      IntermediateSortTempRow intermediateSortTempRow = sortStepRowHandler
           .readRowFromMemoryWithNoSortFieldConvert(dataBlock.getBaseObject(), address);
+      this.sortTempRowUpdater.updateSortTempRow(intermediateSortTempRow);
+      return intermediateSortTempRow;
     } else {
       return sortStepRowHandler
           .readFromMemoryWithoutNoSortFieldConvert(dataBlock.getBaseObject(), address);
@@ -124,10 +127,6 @@ public class UnsafeCarbonRowPage {
         UnsafeSortMemoryManager.INSTANCE.freeMemory(taskId, dataBlock);
         buffer.freeMemory();
     }
-  }
-
-  public boolean isSaveToDisk() {
-    return saveToDisk;
   }
 
   public IntPointerBuffer getBuffer() {

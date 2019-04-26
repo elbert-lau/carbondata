@@ -131,7 +131,6 @@ public class ConcurrentSdkReaderTest {
       executorService.awaitTermination(10, TimeUnit.MINUTES);
     }
   }
-
   class ReadLogic implements Callable<Long> {
     CarbonReader reader;
 

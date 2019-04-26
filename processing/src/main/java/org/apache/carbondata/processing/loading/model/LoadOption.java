@@ -188,11 +188,14 @@ public class LoadOption {
     }
 
     optionsFinal.put("single_pass", String.valueOf(singlePass));
-    optionsFinal.put("sort_scope", "local_sort");
+    optionsFinal.put("sort_scope", CarbonCommonConstants.LOAD_SORT_SCOPE_DEFAULT);
     optionsFinal.put("sort_column_bounds", Maps.getOrDefault(options, "sort_column_bounds", ""));
     optionsFinal.put(CarbonCommonConstants.CARBON_LOAD_MIN_SIZE_INMB,
         Maps.getOrDefault(options, CarbonCommonConstants.CARBON_LOAD_MIN_SIZE_INMB,
             CarbonCommonConstants.CARBON_LOAD_MIN_SIZE_INMB_DEFAULT));
+
+    optionsFinal.put("range_column", Maps.getOrDefault(options, "range_column", null));
+    optionsFinal.put("scale_factor", Maps.getOrDefault(options, "scale_factor", null));
     return optionsFinal;
   }
 

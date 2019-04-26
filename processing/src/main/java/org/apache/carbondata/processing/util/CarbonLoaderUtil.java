@@ -143,7 +143,7 @@ public final class CarbonLoaderUtil {
         CarbonUtil.deleteFoldersAndFiles(carbonFile);
       }
     } catch (IOException | InterruptedException e) {
-      LOGGER.error("Unable to delete the given path :: " + e.getMessage());
+      LOGGER.error("Unable to delete the given path :: " + e.getMessage(), e);
     }
   }
 
@@ -354,7 +354,7 @@ public final class CarbonLoaderUtil {
           try {
             CarbonUtil.deleteFoldersAndFiles(staleFolder);
           } catch (IOException | InterruptedException e) {
-            LOGGER.error("Failed to delete stale folder: " + e.getMessage());
+            LOGGER.error("Failed to delete stale folder: " + e.getMessage(), e);
           }
         }
         status = true;
@@ -592,28 +592,36 @@ public final class CarbonLoaderUtil {
 
     // if enable to control the minimum amount of input data for each node
     if (BlockAssignmentStrategy.NODE_MIN_SIZE_FIRST == blockAssignmentStrategy) {
-      long iexpectedMinSizePerNode = 0;
+      long expectedMinSizePerNodeInt = 0;
       // validate the property load_min_size_inmb specified by the user
       if (CarbonUtil.validateValidIntType(expectedMinSizePerNode)) {
-        iexpectedMinSizePerNode = Integer.parseInt(expectedMinSizePerNode);
+        expectedMinSizePerNodeInt = Integer.parseInt(expectedMinSizePerNode);
       } else {
         LOGGER.warn("Invalid load_min_size_inmb value found: " + expectedMinSizePerNode
             + ", only int value greater than 0 is supported.");
-        iexpectedMinSizePerNode = Integer.parseInt(
+        expectedMinSizePerNodeInt = Integer.parseInt(
             CarbonCommonConstants.CARBON_LOAD_MIN_SIZE_INMB_DEFAULT);
       }
       // If the average expected size for each node greater than load min size,
       // then fall back to default strategy
-      if (iexpectedMinSizePerNode * 1024 * 1024 < sizePerNode) {
+      if (expectedMinSizePerNodeInt * 1024 * 1024 < sizePerNode) {
         if (CarbonProperties.getInstance().isLoadSkewedDataOptimizationEnabled()) {
           blockAssignmentStrategy = BlockAssignmentStrategy.BLOCK_SIZE_FIRST;
         } else {
           blockAssignmentStrategy = BlockAssignmentStrategy.BLOCK_NUM_FIRST;
+          // fall back to BLOCK_NUM_FIRST strategy need to reset
+          // the average expected size for each node
+          if (numOfNodes == 0) {
+            sizePerNode = 1;
+          } else {
+            sizePerNode = blockInfos.size() / numOfNodes;
+            sizePerNode = sizePerNode <= 0 ? 1 : sizePerNode;
+          }
         }
         LOGGER.info("Specified minimum data size to load is less than the average size "
             + "for each node, fallback to default strategy" + blockAssignmentStrategy);
       } else {
-        sizePerNode = iexpectedMinSizePerNode;
+        sizePerNode = expectedMinSizePerNodeInt;
       }
     }
 
@@ -959,7 +967,7 @@ public final class CarbonLoaderUtil {
                     + StringUtils.join(block.getLocations(), ", ")
                     + ")-->" + activeExecutor);
               } catch (IOException e) {
-                LOGGER.error(e);
+                LOGGER.error(e.getMessage(), e);
               }
             }
             remainingBlocks.remove(block);

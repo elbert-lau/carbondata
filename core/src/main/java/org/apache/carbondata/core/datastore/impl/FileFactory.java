@@ -32,6 +32,7 @@ import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.util.ThreadLocalSessionInfo;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -80,19 +81,46 @@ public final class FileFactory {
   }
 
   public static FileType getFileType(String path) {
-    String lowerPath = path.toLowerCase();
-    if (lowerPath.startsWith(CarbonCommonConstants.HDFSURL_PREFIX)) {
-      return FileType.HDFS;
-    } else if (lowerPath.startsWith(CarbonCommonConstants.ALLUXIOURL_PREFIX)) {
-      return FileType.ALLUXIO;
-    } else if (lowerPath.startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX)) {
-      return FileType.VIEWFS;
-    } else if (lowerPath.startsWith(CarbonCommonConstants.S3N_PREFIX) ||
-        lowerPath.startsWith(CarbonCommonConstants.S3A_PREFIX) ||
-        lowerPath.startsWith(CarbonCommonConstants.S3_PREFIX)) {
-      return FileType.S3;
+    FileType fileType = getFileTypeWithActualPath(path);
+    if (fileType != null) {
+      return fileType;
+    }
+    fileType = getFileTypeWithLowerCase(path);
+    if (fileType != null) {
+      return fileType;
     }
     return FileType.LOCAL;
+  }
+
+  private static FileType getFileTypeWithLowerCase(String path) {
+    String lowerCase = path.toLowerCase();
+    if (lowerCase.startsWith(CarbonCommonConstants.HDFSURL_PREFIX)) {
+      return FileType.HDFS;
+    } else if (lowerCase.startsWith(CarbonCommonConstants.ALLUXIOURL_PREFIX)) {
+      return FileType.ALLUXIO;
+    } else if (lowerCase.startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX)) {
+      return FileType.VIEWFS;
+    } else if (lowerCase.startsWith(CarbonCommonConstants.S3N_PREFIX) || lowerCase
+        .startsWith(CarbonCommonConstants.S3A_PREFIX) || lowerCase
+        .startsWith(CarbonCommonConstants.S3_PREFIX)) {
+      return FileType.S3;
+    }
+    return null;
+  }
+
+  private static FileType getFileTypeWithActualPath(String path) {
+    if (path.startsWith(CarbonCommonConstants.HDFSURL_PREFIX)) {
+      return FileType.HDFS;
+    } else if (path.startsWith(CarbonCommonConstants.ALLUXIOURL_PREFIX)) {
+      return FileType.ALLUXIO;
+    } else if (path.startsWith(CarbonCommonConstants.VIEWFSURL_PREFIX)) {
+      return FileType.VIEWFS;
+    } else if (path.startsWith(CarbonCommonConstants.S3N_PREFIX) || path
+        .startsWith(CarbonCommonConstants.S3A_PREFIX) || path
+        .startsWith(CarbonCommonConstants.S3_PREFIX)) {
+      return FileType.S3;
+    }
+    return null;
   }
 
   public static CarbonFile getCarbonFile(String path) {
@@ -189,7 +217,7 @@ public final class FileFactory {
    * @param fileType
    * @param bufferSize
    * @param compressorName name of compressor to write this file
-   * @return data out put stram
+   * @return data out put stream
    * @throws IOException
    */
   public static DataOutputStream getDataOutputStream(String path, FileType fileType, int bufferSize,
@@ -334,7 +362,7 @@ public final class FileFactory {
           CarbonFile carbonFile = FileFactory.getCarbonFile(path, fileType);
           carbonFile.truncate(path, newSize);
         } catch (Exception e) {
-          LOGGER.error("Other exception occurred while truncating the file " + e.getMessage());
+          LOGGER.error("Other exception occurred while truncating the file " + e.getMessage(), e);
         }
         return;
       default:
@@ -368,6 +396,29 @@ public final class FileFactory {
   }
 
   /**
+   * Adds the schema to file path if not exists to the file path.
+   * @param filePath path of file
+   * @return Updated filepath
+   */
+  public static String addSchemeIfNotExists(String filePath) {
+    FileType fileType = getFileType(filePath);
+    switch (fileType) {
+      case LOCAL:
+        if (filePath.startsWith("file:")) {
+          return filePath;
+        } else {
+          return new Path("file://" + filePath).toString();
+        }
+      case HDFS:
+      case ALLUXIO:
+      case VIEWFS:
+      case S3:
+      default:
+        return filePath;
+    }
+  }
+
+  /**
    * below method will be used to update the file path
    * for local type
    * it removes the file:/ from the path
@@ -379,10 +430,11 @@ public final class FileFactory {
   public static String getUpdatedFilePath(String filePath, FileType fileType) {
     switch (fileType) {
       case HDFS:
-      case ALLUXIO:
       case VIEWFS:
       case S3:
         return filePath;
+      case ALLUXIO:
+        return StringUtils.startsWith(filePath, "alluxio") ? filePath : "alluxio:///" + filePath;
       case LOCAL:
       default:
         if (filePath != null && !filePath.isEmpty()) {
@@ -470,6 +522,7 @@ public final class FileFactory {
     switch (fileType) {
       case S3:
       case HDFS:
+      case ALLUXIO:
       case VIEWFS:
         try {
           Path path = new Path(directoryPath);
@@ -479,7 +532,7 @@ public final class FileFactory {
             fs.setPermission(path, permission);
           }
         } catch (IOException e) {
-          LOGGER.error("Exception occurred : " + e.getMessage());
+          LOGGER.error("Exception occurred : " + e.getMessage(), e);
           throw e;
         }
         return;

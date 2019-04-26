@@ -75,7 +75,8 @@ public class UnsafeIntermediateMerger {
     this.rowPages = new ArrayList<UnsafeCarbonRowPage>(CarbonCommonConstants.CONSTANT_SIZE_TEN);
     this.mergedPages = new ArrayList<>();
     this.executorService = Executors.newFixedThreadPool(parameters.getNumberOfCores(),
-        new CarbonThreadFactory("UnsafeIntermediatePool:" + parameters.getTableName()));
+        new CarbonThreadFactory("UnsafeIntermediatePool:" + parameters.getTableName(),
+                true));
     this.procFiles = new ArrayList<>(CarbonCommonConstants.CONSTANT_SIZE_TEN);
     this.mergerTask = new ArrayList<>();
 
@@ -140,7 +141,7 @@ public class UnsafeIntermediateMerger {
     mergerTask.add(executorService.submit(merger));
   }
 
-  public void tryTriggerInmemoryMerging(boolean spillDisk)
+  public void tryTriggerInMemoryMerging(boolean spillDisk)
       throws CarbonSortKeyAndGroupByException {
     List<UnsafeCarbonRowPage> pages2Merge = new ArrayList<>();
     int totalRows2Merge = 0;
@@ -170,7 +171,7 @@ public class UnsafeIntermediateMerger {
 
   public void startInmemoryMergingIfPossible() throws CarbonSortKeyAndGroupByException {
     if (rowPages.size() >= parameters.getNumberOfIntermediateFileToBeMerged()) {
-      tryTriggerInmemoryMerging(false);
+      tryTriggerInMemoryMerging(false);
     }
   }
 
@@ -182,7 +183,7 @@ public class UnsafeIntermediateMerger {
    * @param spillDisk whether to spill the merged result to disk
    */
   private void startIntermediateMerging(UnsafeCarbonRowPage[] rowPages, int totalRows,
-      boolean spillDisk) throws CarbonSortKeyAndGroupByException {
+      boolean spillDisk) {
     UnsafeInMemoryIntermediateDataMerger merger =
         new UnsafeInMemoryIntermediateDataMerger(rowPages, totalRows, parameters, spillDisk);
     mergedPages.add(merger);
@@ -213,7 +214,7 @@ public class UnsafeIntermediateMerger {
         mergerTask.get(i).get();
       } catch (InterruptedException | ExecutionException e) {
         LOGGER.error(e.getMessage(), e);
-        throw new CarbonSortKeyAndGroupByException(e.getMessage(), e);
+        throw new CarbonSortKeyAndGroupByException(e);
       }
     }
   }

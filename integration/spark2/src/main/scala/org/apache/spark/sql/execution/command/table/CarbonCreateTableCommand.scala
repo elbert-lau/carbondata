@@ -78,8 +78,7 @@ case class CarbonCreateTableCommand(
         path
       }
       val streaming = tableInfo.getFactTable.getTableProperties.get("streaming")
-      if (path.startsWith("s3") && streaming != null && streaming != null &&
-          streaming.equalsIgnoreCase("true")) {
+      if (streaming != null && streaming.equalsIgnoreCase("true") && path.startsWith("s3")) {
         throw new UnsupportedOperationException("streaming is not supported with s3 store")
       }
       tableInfo.setTablePath(tablePath)
@@ -144,11 +143,12 @@ case class CarbonCreateTableCommand(
             } else {
               ""
             }
-          // isVisible property is added to hive table properties to differentiate between main
-          // table and datamaps(like preaggregate). It is false only for datamaps. This is added
-          // to improve the show tables performance when filtering the datamaps from main tables
+
           // synchronized to prevent concurrently creation of table with same name
           CarbonCreateTableCommand.synchronized {
+            // isVisible property is added to hive table properties to differentiate between main
+            // table and datamaps(like preaggregate). It is false only for datamaps. This is added
+            // to improve the show tables performance when filtering the datamaps from main tables
             sparkSession.sql(
               s"""CREATE TABLE $dbName.$tableName
                  |(${ rawSchema })
@@ -157,7 +157,7 @@ case class CarbonCreateTableCommand(
                  |  tableName "$tableName",
                  |  dbName "$dbName",
                  |  tablePath "$tablePath",
-                 |  path "$tablePath",
+                 |  path "${FileFactory.addSchemeIfNotExists(tablePath)}",
                  |  isExternal "$isExternal",
                  |  isTransactional "$isTransactionalTable",
                  |  isVisible "$isVisible"

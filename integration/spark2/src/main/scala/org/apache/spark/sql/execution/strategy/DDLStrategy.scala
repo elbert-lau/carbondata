@@ -36,7 +36,7 @@ import org.apache.spark.sql.types.StructField
 import org.apache.spark.util.{CarbonReflectionUtils, FileUtils, SparkUtil}
 
 import org.apache.carbondata.common.exceptions.sql.MalformedCarbonCommandException
-import org.apache.carbondata.common.logging.{LogService, LogServiceFactory}
+import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
 import org.apache.carbondata.core.util.{CarbonProperties, DataTypeUtil, ThreadLocalSessionInfo}
 import org.apache.carbondata.spark.util.Util
@@ -125,15 +125,19 @@ class DDLStrategy(sparkSession: SparkSession) extends SparkStrategy {
             ExecutedCommandExec(alterTable) :: Nil
         } else {
           throw new MalformedCarbonCommandException(
-            "Operation not allowed : " + altertablemodel.alterSql)
+            String.format("Table or view '%s' not found in database '%s' or not carbon fileformat",
+            altertablemodel.tableName,
+            altertablemodel.dbName.getOrElse("default")))
         }
-      case dataTypeChange@CarbonAlterTableDataTypeChangeCommand(alterTableChangeDataTypeModel) =>
+      case colRenameDataTypeChange@CarbonAlterTableColRenameDataTypeChangeCommand(
+      alterTableColRenameAndDataTypeChangeModel, _) =>
         val isCarbonTable = CarbonEnv.getInstance(sparkSession).carbonMetaStore
-          .tableExists(TableIdentifier(alterTableChangeDataTypeModel.tableName,
-            alterTableChangeDataTypeModel.databaseName))(sparkSession)
+          .tableExists(TableIdentifier(alterTableColRenameAndDataTypeChangeModel.tableName,
+            alterTableColRenameAndDataTypeChangeModel.databaseName))(sparkSession)
         if (isCarbonTable) {
-          val carbonTable = CarbonEnv.getCarbonTable(alterTableChangeDataTypeModel.databaseName,
-            alterTableChangeDataTypeModel.tableName)(sparkSession)
+          val carbonTable = CarbonEnv
+            .getCarbonTable(alterTableColRenameAndDataTypeChangeModel.databaseName,
+              alterTableColRenameAndDataTypeChangeModel.tableName)(sparkSession)
           if (carbonTable != null && carbonTable.isFileLevelFormat) {
             throw new MalformedCarbonCommandException(
               "Unsupported alter operation on Carbon external fileformat table")
@@ -141,10 +145,14 @@ class DDLStrategy(sparkSession: SparkSession) extends SparkStrategy {
             throw new MalformedCarbonCommandException(
               "Unsupported operation on non transactional table")
           } else {
-            ExecutedCommandExec(dataTypeChange) :: Nil
+            ExecutedCommandExec(colRenameDataTypeChange) :: Nil
           }
         } else {
-          throw new MalformedCarbonCommandException("Unsupported alter operation on hive table")
+          throw new MalformedCarbonCommandException(
+            String.format("Table or view '%s' not found in database '%s' or not carbon fileformat",
+              alterTableColRenameAndDataTypeChangeModel.tableName,
+              alterTableColRenameAndDataTypeChangeModel.
+                databaseName.getOrElse("default")))
         }
       case addColumn@CarbonAlterTableAddColumnCommand(alterTableAddColumnsModel) =>
         val isCarbonTable = CarbonEnv.getInstance(sparkSession).carbonMetaStore

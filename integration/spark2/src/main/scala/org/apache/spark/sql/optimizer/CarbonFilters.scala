@@ -167,7 +167,13 @@ object CarbonFilters {
       } else {
         dataTypeOfAttribute
       }
-      new CarbonLiteralExpression(value, dataType)
+      val dataValue = if (dataTypeOfAttribute.equals(CarbonDataTypes.BINARY)
+              && Option(value).isDefined) {
+        new String(value.asInstanceOf[Array[Byte]])
+      } else {
+        value
+      }
+      new CarbonLiteralExpression(dataValue, dataType)
     }
 
     createFilter(predicate)
@@ -350,9 +356,18 @@ object CarbonFilters {
           )
         }
       case In(left, right) if (isCarbonSupportedDataTypes(left)) =>
-        new InExpression(transformExpression(left),
-          new ListExpression(convertToJavaList(right.filter(_ != null).filter(!isNullLiteral(_))
-            .map(transformExpression))))
+        left match {
+          case left: AttributeReference if (left.name
+            .equalsIgnoreCase(CarbonCommonConstants.POSITION_ID)) =>
+            new InExpression(transformExpression(left),
+              new ImplicitExpression(convertToJavaList(right.filter(_ != null)
+                .filter(!isNullLiteral(_))
+                .map(transformExpression))))
+          case _ =>
+            new InExpression(transformExpression(left),
+              new ListExpression(convertToJavaList(right.filter(_ != null).filter(!isNullLiteral(_))
+                .map(transformExpression))))
+        }
       case InSet(left, right) if (isCarbonSupportedDataTypes(left)) =>
         val validData = right.filter(_ != null).map { x =>
           val e = Literal(x.toString)

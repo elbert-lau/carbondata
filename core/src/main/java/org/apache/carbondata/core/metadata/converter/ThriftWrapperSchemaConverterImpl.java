@@ -152,6 +152,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       return org.apache.carbondata.format.DataType.DATE;
     } else if (dataType.getId() == DataTypes.TIMESTAMP.getId()) {
       return org.apache.carbondata.format.DataType.TIMESTAMP;
+    } else if (dataType.getId() == DataTypes.BINARY.getId()) {
+      return org.apache.carbondata.format.DataType.BINARY;
     } else if (DataTypes.isArrayType(dataType)) {
       return org.apache.carbondata.format.DataType.ARRAY;
     } else if (DataTypes.isStructType(dataType)) {
@@ -498,6 +500,8 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
         return DataTypes.TIMESTAMP;
       case DATE:
         return DataTypes.DATE;
+      case BINARY:
+        return DataTypes.BINARY;
       case ARRAY:
         return DataTypes.createDefaultArrayType();
       case STRUCT:
@@ -548,6 +552,7 @@ public class ThriftWrapperSchemaConverterImpl implements SchemaConverter {
       if (sortColumns != null) {
         wrapperColumnSchema.setSortColumn(true);
       }
+      wrapperColumnSchema.setColumnProperties(externalColumnSchema.getColumnProperties());
     }
     wrapperColumnSchema.setFunction(externalColumnSchema.getAggregate_function());
     List<org.apache.carbondata.format.ParentColumnTableRelation> parentColumnTableRelation =

@@ -82,8 +82,25 @@ public class BooleanStreamReader extends CarbonColumnVectorImpl
     builder.appendNull();
   }
 
+  @Override public void putNulls(int rowId, int count) {
+    for (int i = 0; i < count; i++) {
+      builder.appendNull();
+    }
+  }
+
   @Override public void reset() {
     builder = type.createBlockBuilder(null, batchSize);
   }
 
+  @Override public void putObject(int rowId, Object value) {
+    if (value == null) {
+      putNull(rowId);
+    } else {
+      if (dictionary == null) {
+        putBoolean(rowId, (boolean) value);
+      } else {
+        putInt(rowId, (int) value);
+      }
+    }
+  }
 }

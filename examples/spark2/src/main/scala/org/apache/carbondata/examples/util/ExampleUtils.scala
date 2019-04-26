@@ -24,21 +24,25 @@ import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.util.CarbonProperties
 
-
-// scalastyle:off println
-
 object ExampleUtils {
 
   def currentPath: String = new File(this.getClass.getResource("/").getPath + "../../")
       .getCanonicalPath
   val storeLocation: String = currentPath + "/target/store"
 
-  def createCarbonSession(appName: String, workThreadNum: Int = 1): SparkSession = {
+  def createCarbonSession (appName: String, workThreadNum: Int = 1,
+      storePath: String = null): SparkSession = {
     val rootPath = new File(this.getClass.getResource("/").getPath
-                            + "../../../..").getCanonicalPath
-    val storeLocation = s"$rootPath/examples/spark2/target/store"
+      + "../../../..").getCanonicalPath
+
     val warehouse = s"$rootPath/examples/spark2/target/warehouse"
-    val metastoredb = s"$rootPath/examples/spark2/target"
+    val metaStoreDB = s"$rootPath/examples/spark2/target"
+
+    val storeLocation = if (null != storePath) {
+      storePath
+    } else {
+      s"$rootPath/examples/spark2/target/store"
+    }
 
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT, "yyyy/MM/dd HH:mm:ss")
@@ -60,7 +64,7 @@ object ExampleUtils {
       .config("spark.sql.warehouse.dir", warehouse)
       .config("spark.driver.host", "localhost")
       .config("spark.sql.crossJoin.enabled", "true")
-      .getOrCreateCarbonSession(storeLocation, metastoredb)
+      .getOrCreateCarbonSession(storeLocation, metaStoreDB)
 
     spark.sparkContext.setLogLevel("ERROR")
     spark
@@ -113,5 +117,3 @@ object ExampleUtils {
     spark.sql(s"DROP TABLE IF EXISTS $tableName")
   }
 }
-// scalastyle:on println
-

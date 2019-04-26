@@ -24,15 +24,18 @@ import java.io.ObjectOutputStream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.carbondata.common.logging.LogServiceFactory;
+
+import org.apache.commons.io.input.ClassLoaderObjectInputStream;
+import org.apache.log4j.Logger;
 
 /**
  * It provides methods to convert object to Base64 string and vice versa.
  */
 public class ObjectSerializationUtil {
 
-  private static final Log LOG = LogFactory.getLog(ObjectSerializationUtil.class);
+  private static final Logger LOG =
+      LogServiceFactory.getLogService(ObjectSerializationUtil.class.getName());
 
   /**
    * Convert object to Base64 String
@@ -63,7 +66,7 @@ public class ObjectSerializationUtil {
           baos.close();
         }
       } catch (IOException e) {
-        LOG.error(e);
+        LOG.error(e.getMessage(), e);
       }
     }
 
@@ -92,7 +95,7 @@ public class ObjectSerializationUtil {
     try {
       bais = new ByteArrayInputStream(bytes);
       gis = new GZIPInputStream(bais);
-      ois = new ObjectInputStream(gis);
+      ois = new ClassLoaderObjectInputStream(Thread.currentThread().getContextClassLoader(), gis);
       return ois.readObject();
     } catch (ClassNotFoundException e) {
       throw new IOException("Could not read object", e);
@@ -108,7 +111,7 @@ public class ObjectSerializationUtil {
           bais.close();
         }
       } catch (IOException e) {
-        LOG.error(e);
+        LOG.error(e.getMessage(), e);
       }
     }
   }

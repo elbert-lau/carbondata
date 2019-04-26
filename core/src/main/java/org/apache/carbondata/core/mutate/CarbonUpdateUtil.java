@@ -28,6 +28,7 @@ import java.util.Set;
 
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
+import org.apache.carbondata.core.constants.CarbonCommonConstantsInternal;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFile;
 import org.apache.carbondata.core.datastore.filesystem.CarbonFileFilter;
@@ -691,9 +692,9 @@ public class CarbonUpdateUtil {
         CarbonUtil.deleteFoldersAndFiles(invalidFile);
         return true;
       } catch (IOException e) {
-        LOGGER.error("error in clean up of compacted files." + e.getMessage());
+        LOGGER.error("error in clean up of compacted files." + e.getMessage(), e);
       } catch (InterruptedException e) {
-        LOGGER.error("error in clean up of compacted files." + e.getMessage());
+        LOGGER.error("error in clean up of compacted files." + e.getMessage(), e);
       }
     }
     return false;
@@ -747,9 +748,12 @@ public class CarbonUpdateUtil {
   /**
    * Return row count of input block
    */
-  public static long getRowCount(
-      BlockMappingVO blockMappingVO,
-      CarbonTable carbonTable) {
+  public static long getRowCount(BlockMappingVO blockMappingVO, CarbonTable carbonTable) {
+    if (blockMappingVO.getBlockRowCountMapping().size() == 1
+        && blockMappingVO.getBlockRowCountMapping().get(CarbonCommonConstantsInternal.ROW_COUNT)
+        != null) {
+      return blockMappingVO.getBlockRowCountMapping().get(CarbonCommonConstantsInternal.ROW_COUNT);
+    }
     SegmentUpdateStatusManager updateStatusManager =
         new SegmentUpdateStatusManager(carbonTable);
     long rowCount = 0;

@@ -23,11 +23,27 @@ import scala.collection.mutable
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.test.util.QueryTest
+import org.scalatest.BeforeAndAfterAll
 
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.util.CarbonProperties
 
-class TestCompactionComplexType extends QueryTest {
+class TestCompactionComplexType extends QueryTest with BeforeAndAfterAll {
+
+  private val compactionThreshold = CarbonProperties.getInstance()
+    .getProperty(CarbonCommonConstants.COMPACTION_SEGMENT_LEVEL_THRESHOLD,
+      CarbonCommonConstants.DEFAULT_SEGMENT_LEVEL_THRESHOLD)
+
+  override protected def beforeAll(): Unit = {
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.COMPACTION_SEGMENT_LEVEL_THRESHOLD, "2,3")
+  }
+
+  override protected def afterAll(): Unit = {
+    sql("DROP TABLE IF EXISTS compactComplex")
+    CarbonProperties.getInstance()
+      .addProperty(CarbonCommonConstants.COMPACTION_SEGMENT_LEVEL_THRESHOLD, compactionThreshold)
+  }
 
   test("test INT with struct and array, Encoding INT-->BYTE") {
     sql("Drop table if exists adaptive")
@@ -987,6 +1003,134 @@ class TestCompactionComplexType extends QueryTest {
         Row(1, Row(true, "abc", mutable.WrappedArray.make(Array(false, true, true)))),
         Row(1, Row(true, "abc", mutable.WrappedArray.make(Array(false, true, false))))
       ))
+  }
+
+  test("complex type compaction") {
+    sql("drop table if exists complexcarbontable")
+    sql("create table complexcarbontable(deviceInformationId int, channelsId string," +
+        "ROMSize string, purchasedate string, mobile struct<imei:string, imsi:string>," +
+        "MAC array<string>, locationinfo array<struct<ActiveAreaId:int, ActiveCountry:string, " +
+        "ActiveProvince:string, Activecity:string, ActiveDistrict:string, ActiveStreet:string>>," +
+        "proddate struct<productionDate:string,activeDeactivedate:array<string>>, gamePointId " +
+        "double,contractNumber double) " +
+        "STORED BY 'org.apache.carbondata.format' " +
+        "TBLPROPERTIES ('DICTIONARY_INCLUDE'='deviceInformationId')"
+    )
+    sql(
+      s"LOAD DATA local inpath '$resourcesPath/complexdata.csv' INTO table " +
+      "complexcarbontable " +
+      "OPTIONS('DELIMITER'=',', 'QUOTECHAR'='\"', 'FILEHEADER'='deviceInformationId,channelsId," +
+      "ROMSize,purchasedate,mobile,MAC,locationinfo,proddate,gamePointId,contractNumber'," +
+      "'COMPLEX_DELIMITER_LEVEL_1'='$', 'COMPLEX_DELIMITER_LEVEL_2'=':')"
+    )
+    sql(
+      s"LOAD DATA local inpath '$resourcesPath/complexdata.csv' INTO table " +
+      "complexcarbontable " +
+      "OPTIONS('DELIMITER'=',', 'QUOTECHAR'='\"', 'FILEHEADER'='deviceInformationId,channelsId," +
+      "ROMSize,purchasedate,mobile,MAC,locationinfo,proddate,gamePointId,contractNumber'," +
+      "'COMPLEX_DELIMITER_LEVEL_1'='$', 'COMPLEX_DELIMITER_LEVEL_2'=':')"
+    )
+    sql("alter table complexcarbontable compact 'minor'")
+    sql(
+      "select locationinfo,proddate from complexcarbontable where deviceInformationId=1 limit 1")
+      .show(false)
+    checkAnswer(sql(
+      "select locationinfo,proddate from complexcarbontable where deviceInformationId=1 limit 1"),
+      Seq(Row(mutable
+        .WrappedArray
+        .make(Array(Row(7, "Chinese", "Hubei Province", "yichang", "yichang", "yichang"),
+          Row(7, "India", "New Delhi", "delhi", "delhi", "delhi"))),
+        Row("29-11-2015", mutable
+          .WrappedArray.make(Array("29-11-2015", "29-11-2015"))))))
+    sql("drop table if exists complexcarbontable")
+  }
+
+  test("test minor compaction with all complex types") {
+    sql("Drop table if exists adaptive")
+    sql(
+      "create table adaptive(roll int, student struct<id:SHORT,name:string,marks:array<SHORT>>, " +
+      "mapField map<int, string>) " +
+      "stored by 'carbondata'")
+    sql("insert into adaptive values(1,'11111\001abc\001200\002300\002400','1\002Nalla\0012" +
+        "\002Singh\0013\002Gupta\0014\002Kumar')")
+    sql("insert into adaptive values(1,'11111\001abc\001200\002300\002401','11\002Nalla\00112" +
+        "\002Singh\00113\002Gupta\00114\002Kumar')")
+    sql("insert into adaptive values(1,'11111\001abc\001200\002300\002402','21\002Nalla\00122" +
+        "\002Singh\00123\002Gupta\00124\002Kumar')")
+    sql("insert into adaptive values(1,'11111\001abc\001200\002300\002403','31\002Nalla\00132" +
+        "\002Singh\00133\002Gupta\00134\002Kumar')")
+    sql("alter table adaptive compact 'minor' ")
+    checkAnswer(sql("select * from adaptive"),
+      Seq(Row(1, Row(11111, "abc", mutable.WrappedArray.make(Array(200, 300, 400))), Map(1 -> "Nalla", 2 -> "Singh", 3 -> "Gupta", 4 -> "Kumar")),
+        Row(1, Row(11111, "abc", mutable.WrappedArray.make(Array(200, 300, 401))), Map(11 -> "Nalla", 12 -> "Singh", 13 -> "Gupta", 14 -> "Kumar")),
+        Row(1, Row(11111, "abc", mutable.WrappedArray.make(Array(200, 300, 402))), Map(21 -> "Nalla", 22 -> "Singh", 23 -> "Gupta", 24 -> "Kumar")),
+        Row(1, Row(11111, "abc", mutable.WrappedArray.make(Array(200, 300, 403))), Map(31 -> "Nalla", 32 -> "Singh", 33 -> "Gupta", 34 -> "Kumar"))
+      ))
+    sql("Drop table if exists adaptive")
+  }
+
+  test("Test major compaction with dictionary include for struct of array type") {
+    sql("DROP TABLE IF EXISTS compactComplex")
+    sql(
+      "CREATE TABLE compactComplex(CUST_ID string,YEAR int, MONTH int, AGE int, GENDER string,EDUCATED " +
+      "string,IS_MARRIED " +
+      "string," +
+      "STRUCT_OF_ARRAY struct<ID:int,CHECK_DATE:string,SNo:array<int>,sal1:array<double>," +
+      "state:array<string>," +
+      "date1:array<string>>,CARD_COUNT int,DEBIT_COUNT int,CREDIT_COUNT int, DEPOSIT double, " +
+      "HQ_DEPOSIT double) STORED BY 'carbondata'" +
+      "TBLPROPERTIES('DICTIONARY_INCLUDE'='STRUCT_OF_ARRAY,DEPOSIT,HQ_DEPOSIT')")
+    sql(
+      s"LOAD DATA LOCAL INPATH '$resourcesPath/structofarray.csv' INTO TABLE compactComplex OPTIONS" +
+      s"('DELIMITER'=',','QUOTECHAR'='\'," +
+      "'FILEHEADER'='CUST_ID,YEAR,MONTH,AGE, GENDER,EDUCATED,IS_MARRIED,STRUCT_OF_ARRAY," +
+      "CARD_COUNT," +
+      "DEBIT_COUNT,CREDIT_COUNT, DEPOSIT,HQ_DEPOSIT','COMPLEX_DELIMITER_LEVEL_1'='$', " +
+      "'COMPLEX_DELIMITER_LEVEL_2'='&')")
+    sql(
+      s"LOAD DATA LOCAL INPATH '$resourcesPath/structofarray.csv' INTO TABLE compactComplex OPTIONS" +
+      s"('DELIMITER'=',','QUOTECHAR'='\'," +
+      "'FILEHEADER'='CUST_ID,YEAR,MONTH,AGE, GENDER,EDUCATED,IS_MARRIED,STRUCT_OF_ARRAY," +
+      "CARD_COUNT," +
+      "DEBIT_COUNT,CREDIT_COUNT, DEPOSIT,HQ_DEPOSIT','COMPLEX_DELIMITER_LEVEL_1'='$', " +
+      "'COMPLEX_DELIMITER_LEVEL_2'='&')")
+    sql(
+      s"LOAD DATA LOCAL INPATH '$resourcesPath/structofarray.csv' INTO TABLE compactComplex OPTIONS" +
+      s"('DELIMITER'=',','QUOTECHAR'='\'," +
+      "'FILEHEADER'='CUST_ID,YEAR,MONTH,AGE,GENDER,EDUCATED,IS_MARRIED,STRUCT_OF_ARRAY," +
+      "CARD_COUNT," +
+      "DEBIT_COUNT,CREDIT_COUNT, DEPOSIT,HQ_DEPOSIT','COMPLEX_DELIMITER_LEVEL_1'='$', " +
+      "'COMPLEX_DELIMITER_LEVEL_2'='&')")
+    sql("ALTER TABLE compactComplex COMPACT 'major'")
+    checkAnswer(sql("Select count(*) from compactComplex"), Row(30))
+  }
+
+  test("Test Compaction for complex types with table restructured") {
+    sql("drop table if exists compactComplex")
+    sql(
+      """
+        | create table compactComplex (
+        | name string,
+        | age int,
+        | number string,
+        | structfield struct<a:array<int> ,b:int>
+        | )
+        | stored by 'carbondata'
+        | TBLPROPERTIES(
+        | 'DICTIONARY_INCLUDE'='name,age,number,structfield'
+        | )
+      """.stripMargin)
+    sql("INSERT into compactComplex values('man',25,'222','1000\0022000\0011')")
+    sql("INSERT into compactComplex values('can',24,'333','1000\0022000\0012')")
+    sql("INSERT into compactComplex values('dan',25,'222','1000\0022000\0013')")
+    sql("ALTER TABLE compactComplex drop columns(age)")
+    sql("ALTER TABLE compactComplex COMPACT 'major'")
+    checkAnswer(sql("SELECT * FROM compactComplex"),
+      Seq(Row("man", "222", Row(mutable.WrappedArray.make(Array(1000, 2000)), 1)),
+        Row("can", "333", Row(mutable.WrappedArray.make(Array(1000, 2000)), 2)),
+        Row("dan", "222", Row(mutable.WrappedArray.make(Array(1000, 2000)), 3))
+      ))
+
   }
 
 }

@@ -139,7 +139,6 @@ public class CSVCarbonWriterTest {
 
   @Test
   public void testAllPrimitiveDataType() throws IOException {
-    // TODO: write all data type and read by CarbonRecordReader to verify the content
     String path = "./testWriteFiles";
     FileUtils.deleteDirectory(new File(path));
 
@@ -159,15 +158,16 @@ public class CSVCarbonWriterTest {
       CarbonWriter writer = builder.withCsvInput(new Schema(fields)).writtenBy("CSVCarbonWriterTest").build();
 
       for (int i = 0; i < 100; i++) {
-        String[] row = new String[]{
+        Object[] row = new Object[]{
             "robot" + (i % 10),
-            String.valueOf(i),
-            String.valueOf(i),
-            String.valueOf(Long.MAX_VALUE - i),
-            String.valueOf((double) i / 2),
-            String.valueOf(true),
+            i,
+            i,
+            (Long.MAX_VALUE - i),
+            ((double) i / 2),
+            true,
             "2019-03-02",
-            "2019-02-12 03:03:34"
+            "2019-02-12 03:03:34",
+            "1.234567"
         };
         writer.write(row);
       }
@@ -535,6 +535,44 @@ public class CSVCarbonWriterTest {
         writer.write(row);
       }
       writer.close();
+    } catch (Exception e) {
+      e.printStackTrace();
+      Assert.fail();
+    } finally {
+      FileUtils.deleteDirectory(new File(path));
+    }
+  }
+
+  @Test
+  public void testWithTableProperties() throws IOException {
+    String path = "./testWriteFiles";
+    FileUtils.deleteDirectory(new File(path));
+
+    Field[] fields = new Field[2];
+    fields[0] = new Field("name", DataTypes.STRING);
+    fields[1] = new Field("age", DataTypes.INT);
+
+    try {
+      CarbonWriter writer = CarbonWriter
+          .builder()
+          .taskNo(5)
+          .outputPath(path)
+          .withCsvInput(new Schema(fields))
+          .writtenBy("CSVCarbonWriterTest")
+          .withTableProperty("sort_columns", "name")
+          .build();
+      writer.write(new String[]{"name3", "21"});
+      writer.write(new String[]{"name1", "7"});
+      writer.write(new String[]{"name2", "18"});
+      writer.close();
+
+      CarbonReader reader = CarbonReader.builder(path, "test").build();
+      int i = 0;
+      while (reader.hasNext()) {
+        i++;
+        Object[] row = (Object[]) reader.readNextRow();
+        Assert.assertTrue(("name" + i).equalsIgnoreCase(row[0].toString()));
+      }
     } catch (Exception e) {
       e.printStackTrace();
       Assert.fail();

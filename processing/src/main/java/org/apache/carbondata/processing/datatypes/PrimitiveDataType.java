@@ -83,7 +83,7 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   /**
    * column parent name
    */
-  private String parentname;
+  private String parentName;
 
   /**
    * column unique id
@@ -111,7 +111,7 @@ public class PrimitiveDataType implements GenericDataType<Object> {
 
   private boolean isDictionary;
 
-  private String nullformat;
+  private String nullFormat;
 
   private boolean isDirectDictionary;
 
@@ -133,10 +133,10 @@ public class PrimitiveDataType implements GenericDataType<Object> {
   public PrimitiveDataType(String name, DataType dataType, String parentName, String columnId,
       boolean isDictionary, String nullFormat) {
     this.name = name;
-    this.parentname = parentName;
+    this.parentName = parentName;
     this.columnId = columnId;
     this.isDictionary = isDictionary;
-    this.nullformat = nullFormat;
+    this.nullFormat = nullFormat;
     this.dataType = dataType;
   }
 
@@ -157,11 +157,11 @@ public class PrimitiveDataType implements GenericDataType<Object> {
       DictionaryClient client, Boolean useOnePass, Map<Object, Integer> localCache,
       String nullFormat) {
     this.name = carbonColumn.getColName();
-    this.parentname = parentName;
+    this.parentName = parentName;
     this.columnId = columnId;
     this.carbonDimension = carbonDimension;
     this.isDictionary = isDictionaryDimension(carbonDimension);
-    this.nullformat = nullFormat;
+    this.nullFormat = nullFormat;
     this.dataType = carbonColumn.getDataType();
 
     DictionaryColumnUniqueIdentifier identifier =
@@ -250,8 +250,8 @@ public class PrimitiveDataType implements GenericDataType<Object> {
    * get column parent name
    */
   @Override
-  public String getParentname() {
-    return parentname;
+  public String getParentName() {
+    return parentName;
   }
 
   /*
@@ -330,7 +330,7 @@ public class PrimitiveDataType implements GenericDataType<Object> {
       // TODO have to refactor and place all the cases present in NonDictionaryFieldConverterImpl
       if (null == parsedValue && this.carbonDimension.getDataType() != DataTypes.STRING) {
         updateNullValue(dataOutputStream, logHolder);
-      } else if (null == parsedValue || parsedValue.equals(nullformat)) {
+      } else if (null == parsedValue || parsedValue.equals(nullFormat)) {
         updateNullValue(dataOutputStream, logHolder);
       } else {
         String dateFormat = null;
@@ -344,7 +344,7 @@ public class PrimitiveDataType implements GenericDataType<Object> {
             byte[] value = null;
             if (isDirectDictionary) {
               int surrogateKey;
-              if (!(input instanceof Long)) {
+              if (!(input instanceof Long) && !(input instanceof Integer)) {
                 SimpleDateFormat parser = new SimpleDateFormat(getDateFormat(carbonDimension));
                 parser.parse(parsedValue);
               }
@@ -353,6 +353,11 @@ public class PrimitiveDataType implements GenericDataType<Object> {
               // using dictionaryGenerator.
               if (dictionaryGenerator instanceof DirectDictionary && input instanceof Long) {
                 surrogateKey = ((DirectDictionary) dictionaryGenerator).generateKey((long) input);
+              } else if (dictionaryGenerator instanceof DirectDictionary
+                  && input instanceof Integer) {
+                // In case of file format, for complex type date or time type, input data comes as a
+                // Integer object, so just assign the surrogate key with the input object value
+                surrogateKey = (int) input;
               } else {
                 surrogateKey = dictionaryGenerator.getOrGenerateKey(parsedValue);
               }
@@ -558,10 +563,10 @@ public class PrimitiveDataType implements GenericDataType<Object> {
     PrimitiveDataType dataType = new PrimitiveDataType(this.outputArrayIndex, 0);
     dataType.carbonDimension = this.carbonDimension;
     dataType.isDictionary = this.isDictionary;
-    dataType.parentname = this.parentname;
+    dataType.parentName = this.parentName;
     dataType.columnId = this.columnId;
     dataType.dictionaryGenerator = this.dictionaryGenerator;
-    dataType.nullformat = this.nullformat;
+    dataType.nullFormat = this.nullFormat;
     dataType.setKeySize(this.keySize);
     dataType.setSurrogateIndex(this.index);
     dataType.name = this.name;
@@ -574,6 +579,12 @@ public class PrimitiveDataType implements GenericDataType<Object> {
     columnInfoList.add(
         new ComplexColumnInfo(ColumnType.COMPLEX_PRIMITIVE, dataType,
             name, !isDictionary));
+  }
+
+  @Override
+  public int getDepth() {
+    // primitive type has no children
+    return 1;
   }
 
 }

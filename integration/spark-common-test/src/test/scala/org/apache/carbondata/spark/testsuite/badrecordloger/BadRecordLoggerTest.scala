@@ -21,10 +21,9 @@ import java.io.{File, FileFilter}
 
 import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.hive.HiveContext
 import org.scalatest.BeforeAndAfterAll
 
-import org.apache.carbondata.core.constants.{CarbonCommonConstants, CarbonLoadOptionConstants}
+import org.apache.carbondata.core.constants.{CarbonCommonConstants}
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.spark.sql.test.util.QueryTest
 
@@ -36,7 +35,6 @@ import org.apache.carbondata.core.datastore.impl.FileFactory
  *
  */
 class BadRecordLoggerTest extends QueryTest with BeforeAndAfterAll {
-  var hiveContext: HiveContext = _
 
   override def beforeAll {
     try {
@@ -269,6 +267,41 @@ class BadRecordLoggerTest extends QueryTest with BeforeAndAfterAll {
     assert(checkRedirectedCsvContentAvailableInSource(csvFilePath, redirectCsvPath))
   }
 
+  test("test load ddl command with improper value") {
+    sql("drop table IF EXISTS dataLoadOptionTests")
+    sql(
+      s"""
+         | CREATE TABLE IF NOT EXISTS dataLoadOptionTests(
+         |   ID BigInt,
+         |   date Timestamp,
+         |   country String,
+         |   actual_price Double,
+         |   Quantity int,
+         |   sold_price Decimal(19,2)
+         | ) STORED BY 'carbondata'
+      """.stripMargin.trim)
+    val csvFilePath = s"$resourcesPath/badrecords/emptyTimeStampValue.csv"
+    try {
+      sql(
+        s"""
+           | LOAD DATA local inpath '" + $csvFilePath + "' INTO TABLE dataLoadOptionTests
+           | OPTIONS(
+           |   'bad_records_logger_enable'='fals',
+           |   'DELIMITER'= ',',
+           |   'QUOTECHAR'= '\"'
+           | )""".stripMargin.trim);
+      assert(false)
+    } catch {
+      case ex: Exception =>
+        assert(ex.getMessage.contains(
+          "option BAD_RECORDS_LOGGER_ENABLE can have only either TRUE or FALSE, " +
+            "It shouldn't be fals"
+        ))
+    } finally {
+      sql("drop table IF EXISTS dataLoadOptionTests")
+    }
+  }
+
   def getRedirectCsvPath(dbName: String, tableName: String, segment: String, task: String) = {
     var badRecordLocation = CarbonProperties.getInstance()
       .getProperty(CarbonCommonConstants.CARBON_BADRECORDS_LOC)
@@ -308,17 +341,17 @@ class BadRecordLoggerTest extends QueryTest with BeforeAndAfterAll {
   }
 
   override def afterAll {
-    sql("drop table sales")
-    sql("drop table sales_test")
-    sql("drop table serializable_values")
-    sql("drop table serializable_values_false")
-    sql("drop table insufficientColumn")
-    sql("drop table insufficientColumn_false")
-    sql("drop table emptyColumnValues")
-    sql("drop table emptyColumnValues_false")
-    sql("drop table empty_timestamp")
-    sql("drop table empty_timestamp_false")
-    sql("drop table dataloadOptionTests")
+    sql("drop table IF EXISTS sales")
+    sql("drop table IF EXISTS sales_test")
+    sql("drop table IF EXISTS serializable_values")
+    sql("drop table IF EXISTS serializable_values_false")
+    sql("drop table IF EXISTS insufficientColumn")
+    sql("drop table IF EXISTS insufficientColumn_false")
+    sql("drop table IF EXISTS emptyColumnValues")
+    sql("drop table IF EXISTS emptyColumnValues_false")
+    sql("drop table IF EXISTS empty_timestamp")
+    sql("drop table IF EXISTS empty_timestamp_false")
+    sql("drop table IF EXISTS dataloadOptionTests")
     sql("drop table IF EXISTS loadIssue")
     CarbonProperties.getInstance()
       .addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT, "dd-MM-yyyy")

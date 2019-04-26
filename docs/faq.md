@@ -43,6 +43,7 @@
 - [Failed to insert data on the cluster](#failed-to-insert-data-on-the-cluster)
 - [Failed to execute Concurrent Operations(Load,Insert,Update) on table by multiple workers](#failed-to-execute-concurrent-operations-on-table-by-multiple-workers)
 - [Failed to create a table with a single numeric column](#failed-to-create-a-table-with-a-single-numeric-column)
+- [Failed to create datamap and drop datamap is also not working](#failed-to-create-datamap-and-drop-datamap-is-also-not-working)
 
 ## 
 
@@ -79,14 +80,12 @@ The store location specified while creating carbon session is used by the Carbon
 Try creating ``carbonsession`` with ``storepath`` specified in the following manner :
 
 ```
-val carbon = SparkSession.builder().config(sc.getConf)
-             .getOrCreateCarbonSession(<store_path>)
+val carbon = SparkSession.builder().config(sc.getConf).getOrCreateCarbonSession(<carbon_store_path>)
 ```
 Example:
 
 ```
-val carbon = SparkSession.builder().config(sc.getConf)
-             .getOrCreateCarbonSession("hdfs://localhost:9000/carbon/store")
+val carbon = SparkSession.builder().config(sc.getConf).getOrCreateCarbonSession("hdfs://localhost:9000/carbon/store")
 ```
 
 ## What is Carbon Lock Type?
@@ -292,10 +291,11 @@ java.io.FileNotFoundException: hdfs:/localhost:9000/carbon/store/default/hdfstab
 
   2. Use the following command :
 
-```
-"mvn -Pspark-2.1 -Dspark.version {yourSparkVersion} clean package"
-```
-Note :  Refrain from using "mvn clean package" without specifying the profile.
+  ```
+  mvn -Pspark-2.1 -Dspark.version {yourSparkVersion} clean package
+  ```
+  
+Note : Refrain from using "mvn clean package" without specifying the profile.
 
 ## Failed to execute load query on cluster
 
@@ -416,9 +416,9 @@ Note :  Refrain from using "mvn clean package" without specifying the profile.
 
   Insertion fails with the following exception :
 
-   ```
-   Data Load failure exception
-   ```
+  ```
+  Data Load failure exception
+  ```
 
   **Possible Cause**
 
@@ -445,9 +445,9 @@ Note :  Refrain from using "mvn clean package" without specifying the profile.
 
   Execution fails with the following exception :
 
-   ```
-   Table is locked for updation.
-   ```
+  ```
+  Table is locked for updation.
+  ```
 
   **Possible Cause**
 
@@ -463,9 +463,9 @@ Note :  Refrain from using "mvn clean package" without specifying the profile.
 
   Execution fails with the following exception :
 
-   ```
-   Table creation fails.
-   ```
+  ```
+  Table creation fails.
+  ```
 
   **Possible Cause**
 
@@ -475,4 +475,21 @@ Note :  Refrain from using "mvn clean package" without specifying the profile.
 
   A single column that can be considered as dimension is mandatory for table creation.
 
+## Failed to create datamap and drop datamap is also not working
+  
+  **Symptom**
 
+  Execution fails with the following exception :
+
+  ```
+  HDFS Quota Exceeded
+  ```
+
+  **Possible Cause**
+
+  HDFS Quota is set, and it is not letting carbondata write or modify any files.
+
+  **Procedure**
+
+  Drop that particular datamap using Drop Table command using table name as
+  parentTableName_datamapName so as to clear the stale folders.

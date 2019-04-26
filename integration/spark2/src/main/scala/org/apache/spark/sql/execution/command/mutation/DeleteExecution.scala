@@ -104,7 +104,7 @@ object DeleteExecution {
         CarbonFilters.getPartitions(
           Seq.empty,
           sparkSession,
-          TableIdentifier(tableName, databaseNameOp)).map(_.asJava).orNull)
+          TableIdentifier(tableName, databaseNameOp)).map(_.asJava).orNull, true)
     val segmentUpdateStatusMngr = new SegmentUpdateStatusManager(carbonTable)
     CarbonUpdateUtil
       .createBlockDetailsMap(blockMappingVO, segmentUpdateStatusMngr)
@@ -283,7 +283,7 @@ object DeleteExecution {
         } catch {
           case e : MultipleMatchingException =>
             LOGGER.error(e.getMessage)
-          // dont throw exception here.
+          // don't throw exception here.
           case e: Exception =>
             val errorMsg = s"Delete data operation is failed for ${ database }.${ tableName }."
             LOGGER.error(errorMsg + e.getMessage)

@@ -219,6 +219,8 @@ class SparkCarbonFileFormat extends FileFormat
           fieldTypes(i).dataType match {
             case StringType =>
               data(i) = row.getString(i)
+            case BinaryType =>
+              data(i) = row.getBinary(i)
             case d: DecimalType =>
               data(i) = row.getDecimal(i, d.precision, d.scale).toJavaBigDecimal
             case s: StructType =>
@@ -383,7 +385,7 @@ class SparkCarbonFileFormat extends FileFormat
 
       if (file.filePath.endsWith(CarbonTablePath.CARBON_DATA_EXT)) {
         val split = new CarbonInputSplit("null",
-          new Path(new URI(file.filePath)),
+          new Path(new URI(file.filePath)).toString,
           file.start,
           file.length,
           file.locations,
@@ -394,10 +396,10 @@ class SparkCarbonFileFormat extends FileFormat
         split.setDetailInfo(info)
         info.setBlockSize(file.length)
         // Read the footer offset and set.
-        val reader = FileFactory.getFileHolder(FileFactory.getFileType(split.getPath.toString),
+        val reader = FileFactory.getFileHolder(FileFactory.getFileType(split.getFilePath),
           broadcastedHadoopConf.value.value)
         val buffer = reader
-          .readByteBuffer(FileFactory.getUpdatedFilePath(split.getPath.toString),
+          .readByteBuffer(FileFactory.getUpdatedFilePath(split.getFilePath),
             file.length - 8,
             8)
         info.setBlockFooterOffset(buffer.getLong)
@@ -410,15 +412,8 @@ class SparkCarbonFileFormat extends FileFormat
         val model = format.createQueryModel(split, hadoopAttemptContext)
         model.setConverter(new SparkDataTypeConverterImpl)
         model.setPreFetchData(false)
-        var isAdded = false
-        Option(TaskContext.get()).foreach { context =>
-          val onCompleteCallbacksField = context.getClass.getDeclaredField("onCompleteCallbacks")
-          onCompleteCallbacksField.setAccessible(true)
-          val listeners = onCompleteCallbacksField.get(context)
-            .asInstanceOf[ArrayBuffer[TaskCompletionListener]]
-          isAdded = listeners.exists(p => p.isInstanceOf[CarbonLoadTaskCompletionListener])
-          model.setFreeUnsafeMemory(!isAdded)
-        }
+        // As file format uses on heap, no need to free unsafe memory
+        model.setFreeUnsafeMemory(false)
         val carbonReader = if (readVector) {
           model.setDirectVectorFill(true)
           val vectorizedReader = new VectorizedCarbonRecordReader(model,
@@ -439,7 +434,7 @@ class SparkCarbonFileFormat extends FileFormat
         Option(TaskContext.get()).foreach{context =>
           context.addTaskCompletionListener(
           CarbonQueryTaskCompletionListenerImpl(
-            iter.asInstanceOf[RecordReaderIterator[InternalRow]], !isAdded))
+            iter.asInstanceOf[RecordReaderIterator[InternalRow]]))
         }
 
         if (carbonReader.isInstanceOf[VectorizedCarbonRecordReader] && readVector) {

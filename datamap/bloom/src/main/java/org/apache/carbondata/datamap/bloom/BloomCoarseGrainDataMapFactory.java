@@ -123,7 +123,7 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
       this.cache = CacheProvider.getInstance()
           .createCache(new CacheType("bloom_cache"), BloomDataMapCache.class.getName());
     } catch (Exception e) {
-      LOGGER.error(e);
+      LOGGER.error(e.getMessage(), e);
       throw new MalformedDataMapCommandException(e.getMessage());
     }
   }
@@ -227,7 +227,8 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
    * returns all shard directories of bloom index files for query
    * if bloom index files are merged we should get only one shard path
    */
-  private Set<String> getAllShardPaths(String tablePath, String segmentId) {
+  public static Set<String> getAllShardPaths(String tablePath, String segmentId,
+      String dataMapName) {
     String dataMapStorePath = CarbonTablePath.getDataMapStorePath(
         tablePath, segmentId, dataMapName);
     CarbonFile[] carbonFiles = FileFactory.getCarbonFile(dataMapStorePath).listFiles();
@@ -257,7 +258,8 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
     try {
       Set<String> shardPaths = segmentMap.get(segment.getSegmentNo());
       if (shardPaths == null) {
-        shardPaths = getAllShardPaths(getCarbonTable().getTablePath(), segment.getSegmentNo());
+        shardPaths =
+            getAllShardPaths(getCarbonTable().getTablePath(), segment.getSegmentNo(), dataMapName);
         segmentMap.put(segment.getSegmentNo(), shardPaths);
       }
       Set<String> filteredShards = segment.getFilteredIndexShardNames();
@@ -299,7 +301,8 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
     List<DataMapDistributable> dataMapDistributableList = new ArrayList<>();
     Set<String> shardPaths = segmentMap.get(segment.getSegmentNo());
     if (shardPaths == null) {
-      shardPaths = getAllShardPaths(getCarbonTable().getTablePath(), segment.getSegmentNo());
+      shardPaths =
+          getAllShardPaths(getCarbonTable().getTablePath(), segment.getSegmentNo(), dataMapName);
       segmentMap.put(segment.getSegmentNo(), shardPaths);
     }
     Set<String> filteredShards = segment.getFilteredIndexShardNames();
@@ -385,6 +388,8 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
         return false;
       case ALTER_CHANGE_DATATYPE:
         return true;
+      case ALTER_COLUMN_RENAME:
+        return true;
       case STREAMING:
         return false;
       case DELETE:
@@ -415,8 +420,9 @@ public class BloomCoarseGrainDataMapFactory extends DataMapFactory<CoarseGrainDa
         }
         return false;
       }
-      case ALTER_CHANGE_DATATYPE: {
-        // alter table change one column datatype
+      case ALTER_CHANGE_DATATYPE:
+      case ALTER_COLUMN_RENAME: {
+        // alter table change one column datatype, or rename
         // will be blocked if the column in bloomfilter datamap
         String columnToChangeDatatype = (String) targets[0];
         List<String> indexedColumnNames = dataMapMeta.getIndexedColumnNames();

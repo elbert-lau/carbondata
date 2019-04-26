@@ -73,6 +73,11 @@ public class DataFileFooterConverterV3 extends AbstractDataFileFooterConverter {
     dataFileFooter.setNumberOfRows(footer.getNum_rows());
     dataFileFooter.setSegmentInfo(getSegmentInfo(footer.getSegment_info()));
     dataFileFooter.setSchemaUpdatedTimeStamp(fileHeader.getTime_stamp());
+    if (footer.isSetIs_sort()) {
+      dataFileFooter.setSorted(footer.isIs_sort());
+    } else {
+      dataFileFooter.setSorted(null);
+    }
     List<ColumnSchema> columnSchemaList = new ArrayList<ColumnSchema>();
     List<org.apache.carbondata.format.ColumnSchema> table_columns = fileHeader.getColumn_schema();
     for (int i = 0; i < table_columns.size(); i++) {
@@ -139,6 +144,14 @@ public class DataFileFooterConverterV3 extends AbstractDataFileFooterConverter {
     blockletInfo.setDimensionOffset(blockletInfoThrift.getDimension_offsets());
     blockletInfo.setMeasureOffsets(blockletInfoThrift.getMeasure_offsets());
     blockletInfo.setNumberOfPages(blockletInfoThrift.getNumber_number_of_pages());
+    if (blockletInfoThrift.getRow_count_in_page() != null
+        && blockletInfoThrift.getRow_count_in_page().size() != 0) {
+      int[] rowCountInPages = new int[blockletInfoThrift.getRow_count_in_page().size()];
+      for (int i = 0; i < blockletInfoThrift.getRow_count_in_page().size(); i++) {
+        rowCountInPages[i] = blockletInfoThrift.getRow_count_in_page().get(i);
+      }
+      blockletInfo.setNumberOfRowsPerPage(rowCountInPages);
+    }
     return blockletInfo;
   }
 

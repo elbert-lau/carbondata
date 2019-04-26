@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.datamap.Segment;
 import org.apache.carbondata.core.datastore.block.SegmentProperties;
@@ -60,15 +61,15 @@ import org.apache.carbondata.core.scan.executor.util.QueryUtil;
 import org.apache.carbondata.core.scan.filter.resolver.FilterResolverIntf;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
+import org.apache.log4j.Logger;
 
 public class BlockletDataMapUtil {
 
-  private static final Log LOG = LogFactory.getLog(BlockletDataMapUtil.class);
+  private static final Logger LOG =
+      LogServiceFactory.getLogService(BlockletDataMapUtil.class.getName());
 
   public static Map<String, BlockMetaInfo> getBlockMetaInfoMap(
       TableBlockIndexUniqueIdentifierWrapper identifierWrapper,
@@ -108,10 +109,10 @@ public class BlockletDataMapUtil {
         isTransactionalTable);
     for (DataFileFooter footer : indexInfo) {
       if ((!isTransactionalTable) && (tableColumnList.size() != 0) &&
-          !isSameColumnSchemaList(footer.getColumnInTable(), tableColumnList)) {
-        LOG.error("Schema of " + identifier.getIndexFileName()
-            + " doesn't match with the table's schema");
-        throw new IOException("All the files doesn't have same schema. "
+          !isSameColumnAndDifferentDatatypeInSchema(footer.getColumnInTable(), tableColumnList)) {
+        LOG.error("Datatype of the common columns present in " + identifier.getIndexFileName()
+            + " doesn't match with the column's datatype in table schema");
+        throw new IOException("All common columns present in the files doesn't have same datatype. "
             + "Unsupported operation on nonTransactional table. Check logs.");
       }
       if ((tableColumnList != null) && (tableColumnList.size() == 0)) {
@@ -251,16 +252,23 @@ public class BlockletDataMapUtil {
     return true;
   }
 
-  public static boolean isSameColumnSchemaList(List<ColumnSchema> indexFileColumnList,
-      List<ColumnSchema> tableColumnList) {
-    if (indexFileColumnList.size() != tableColumnList.size()) {
-      LOG.error("Index file's column size is " + indexFileColumnList.size()
-          + " but table's column size is " + tableColumnList.size());
-      return false;
-    }
+  /**
+   * This method validates whether the schema present in index and table contains the same column
+   * name but with different dataType.
+   */
+  public static boolean isSameColumnAndDifferentDatatypeInSchema(
+      List<ColumnSchema> indexFileColumnList, List<ColumnSchema> tableColumnList) {
     for (int i = 0; i < tableColumnList.size(); i++) {
-      if (!tableColumnList.contains(indexFileColumnList.get(i))) {
-        return false;
+      for (int j = 0; j < indexFileColumnList.size(); j++) {
+        if (indexFileColumnList.get(j).getColumnName()
+            .equalsIgnoreCase(tableColumnList.get(i).getColumnName()) && !indexFileColumnList.get(j)
+            .getDataType().getName()
+            .equalsIgnoreCase(tableColumnList.get(i).getDataType().getName())) {
+          LOG.error("Datatype of the Column " + indexFileColumnList.get(j).getColumnName()
+              + " present in index file, is not same as datatype of the column with same name"
+              + "present in table");
+          return false;
+        }
       }
     }
     return true;

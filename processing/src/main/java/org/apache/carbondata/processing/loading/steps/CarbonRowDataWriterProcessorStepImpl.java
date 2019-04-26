@@ -126,7 +126,7 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
       measureCount = configuration.getMeasureCount();
       outputLength = measureCount + (this.noDictWithComplextCount > 0 ? 1 : 0) + 1;
       CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-          .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+          .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
               System.currentTimeMillis());
 
       if (iterators.length == 1) {
@@ -134,7 +134,7 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
       } else {
         executorService = Executors.newFixedThreadPool(iterators.length,
             new CarbonThreadFactory("NoSortDataWriterPool:" + configuration.getTableIdentifier()
-                .getCarbonTableIdentifier().getTableName()));
+                .getCarbonTableIdentifier().getTableName(), true));
         Future[] futures = new Future[iterators.length];
         for (int i = 0; i < iterators.length; i++) {
           futures[i] = executorService.submit(new DataWriterRunnable(iterators[i], i));
@@ -146,13 +146,13 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
     } catch (CarbonDataWriterException e) {
       LOGGER.error("Failed for table: " + tableName + " in DataWriterProcessorStepImpl", e);
       throw new CarbonDataLoadingException(
-          "Error while initializing data handler : " + e.getMessage());
+          "Error while initializing data handler : " + e.getMessage(), e);
     } catch (Exception e) {
       LOGGER.error("Failed for table: " + tableName + " in DataWriterProcessorStepImpl", e);
       if (e instanceof BadRecordFoundException) {
         throw new BadRecordFoundException(e.getMessage(), e);
       }
-      throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage(), e);
+      throw new CarbonDataLoadingException(e.getMessage(), e);
     }
     return null;
   }
@@ -218,10 +218,10 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
       }
     }
     CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-        .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+        .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
             System.currentTimeMillis());
     CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-        .recordMdkGenerateTotalTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+        .recordMdkGenerateTotalTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
             System.currentTimeMillis());
     if (null != exception) {
       throw exception;
@@ -234,10 +234,10 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
         dataHandler.closeHandler();
       } catch (CarbonDataWriterException e) {
         LOGGER.error(e.getMessage(), e);
-        throw new CarbonDataLoadingException(e.getMessage());
+        throw new CarbonDataLoadingException(e);
       } catch (Exception e) {
         LOGGER.error(e.getMessage(), e);
-        throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage());
+        throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage(), e);
       }
     }
   }
@@ -330,7 +330,7 @@ public class CarbonRowDataWriterProcessorStepImpl extends AbstractDataLoadProces
       try {
         doExecute(this.iterator, iteratorIndex);
       } catch (IOException e) {
-        LOGGER.error(e);
+        LOGGER.error(e.getMessage(), e);
         throw new RuntimeException(e);
       }
     }

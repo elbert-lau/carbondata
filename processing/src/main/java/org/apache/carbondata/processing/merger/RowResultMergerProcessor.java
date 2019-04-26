@@ -18,6 +18,7 @@ package org.apache.carbondata.processing.merger;
 
 import java.io.IOException;
 import java.util.AbstractQueue;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
@@ -103,15 +104,19 @@ public class RowResultMergerProcessor extends AbstractResultProcessor {
    * Merge function
    *
    */
-  public boolean execute(List<RawResultIterator> resultIteratorList) throws Exception {
-    initRecordHolderHeap(resultIteratorList);
+  public boolean execute(List<RawResultIterator> unsortedResultIteratorList,
+      List<RawResultIterator> sortedResultIteratorList) throws Exception {
+    List<RawResultIterator> finalIteratorList = new ArrayList<>(unsortedResultIteratorList);
+    finalIteratorList.addAll(sortedResultIteratorList);
+
+    initRecordHolderHeap(finalIteratorList);
     boolean mergeStatus = false;
     int index = 0;
     boolean isDataPresent = false;
     try {
 
       // add all iterators to the queue
-      for (RawResultIterator leaftTupleIterator : resultIteratorList) {
+      for (RawResultIterator leaftTupleIterator : finalIteratorList) {
         this.recordHolderHeap.add(leaftTupleIterator);
         index++;
       }
@@ -239,7 +244,7 @@ public class RowResultMergerProcessor extends AbstractResultProcessor {
         row1 = o1.fetchConverted();
         row2 = o2.fetchConverted();
       } catch (KeyGenException e) {
-        LOGGER.error(e.getMessage());
+        LOGGER.error(e.getMessage(), e);
       }
       if (null == row1 || null == row2) {
         return 0;

@@ -54,8 +54,6 @@ import org.apache.carbondata.core.util.BlockletDataMapUtil;
 import org.apache.carbondata.core.util.path.CarbonTablePath;
 import org.apache.carbondata.events.Event;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
@@ -67,7 +65,6 @@ import org.apache.hadoop.fs.RemoteIterator;
 public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     implements BlockletDetailsFetcher, SegmentPropertiesFetcher, CacheableDataMap {
 
-  private static final Log LOG = LogFactory.getLog(BlockletDataMapFactory.class);
   private static final String NAME = "clustered.btree.blocklet";
   /**
    * variable for cache level BLOCKLET
@@ -195,7 +192,7 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
   @Override
   public List<ExtendedBlocklet> getExtendedBlocklets(List<Blocklet> blocklets, Segment segment)
       throws IOException {
-    List<ExtendedBlocklet> detailedBlocklets = new ArrayList<>();
+    List<ExtendedBlocklet> detailedBlocklets = new ArrayList<>(blocklets.size() + 1);
     // If it is already detailed blocklet then type cast and return same
     if (blocklets.size() > 0 && blocklets.get(0) instanceof ExtendedBlocklet) {
       for (Blocklet blocklet : blocklets) {
@@ -377,6 +374,13 @@ public class BlockletDataMapFactory extends CoarseGrainDataMapFactory
     List<CoarseGrainDataMap> dataMaps = getDataMaps(segment);
     assert (dataMaps.size() > 0);
     CoarseGrainDataMap coarseGrainDataMap = dataMaps.get(0);
+    assert (coarseGrainDataMap instanceof BlockDataMap);
+    BlockDataMap dataMap = (BlockDataMap) coarseGrainDataMap;
+    return dataMap.getSegmentProperties();
+  }
+
+  @Override public SegmentProperties getSegmentPropertiesFromDataMap(DataMap coarseGrainDataMap)
+      throws IOException {
     assert (coarseGrainDataMap instanceof BlockDataMap);
     BlockDataMap dataMap = (BlockDataMap) coarseGrainDataMap;
     return dataMap.getSegmentProperties();

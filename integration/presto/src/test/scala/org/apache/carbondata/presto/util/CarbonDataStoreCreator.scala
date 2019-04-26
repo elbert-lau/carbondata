@@ -78,9 +78,7 @@ object CarbonDataStoreCreator {
         new CarbonTableIdentifier(dbName,
           tableName,
           UUID.randomUUID().toString))
-      //   val factFilePath: String = new File(dataFilePath).getCanonicalPath
       val storeDir: File = new File(absoluteTableIdentifier.getTablePath)
-      CarbonUtil.deleteFoldersAndFiles(storeDir)
       val table: CarbonTable = createTable(absoluteTableIdentifier, useLocalDict)
       writeDictionary(dataFilePath, table, absoluteTableIdentifier)
       val schema: CarbonDataLoadSchema = new CarbonDataLoadSchema(table)
@@ -241,6 +239,7 @@ object CarbonDataStoreCreator {
     bonus.setDataType(DataTypes.createDecimalType(10, 4))
     bonus.setPrecision(10)
     bonus.setScale(4)
+    bonus.setEncodingList(dictionaryEncoding)
     bonus.setEncodingList(invertedIndexEncoding)
     bonus.setColumnUniqueId(UUID.randomUUID().toString)
     bonus.setDimensionColumn(false)

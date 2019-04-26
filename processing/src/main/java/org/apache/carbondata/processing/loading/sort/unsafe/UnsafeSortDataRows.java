@@ -138,7 +138,8 @@ public class UnsafeSortDataRows {
     CarbonDataProcessorUtil.createLocations(parameters.getTempFileLocation());
     this.dataSorterAndWriterExecutorService = Executors
         .newFixedThreadPool(parameters.getNumberOfCores(),
-            new CarbonThreadFactory("UnsafeSortDataRowPool:" + parameters.getTableName()));
+            new CarbonThreadFactory("UnsafeSortDataRowPool:" + parameters.getTableName(),
+                    true));
     semaphore = new Semaphore(parameters.getNumberOfCores());
   }
 
@@ -148,13 +149,10 @@ public class UnsafeSortDataRows {
         UnsafeMemoryManager.allocateMemoryWithRetry(this.taskId, inMemoryChunkSize);
     boolean isMemoryAvailable =
         UnsafeSortMemoryManager.INSTANCE.isMemoryAvailable(baseBlock.size());
-    if (isMemoryAvailable) {
-      UnsafeSortMemoryManager.INSTANCE.allocateDummyMemory(baseBlock.size());
-    } else {
-      // merge and spill in-memory pages to disk if memory is not enough
-      unsafeInMemoryIntermediateFileMerger.tryTriggerInmemoryMerging(true);
+    if (!isMemoryAvailable) {
+      unsafeInMemoryIntermediateFileMerger.tryTriggerInMemoryMerging(true);
     }
-    return new UnsafeCarbonRowPage(tableFieldStat, baseBlock, !isMemoryAvailable, taskId);
+    return new UnsafeCarbonRowPage(tableFieldStat, baseBlock, taskId);
   }
 
   public boolean canAdd() {
@@ -202,21 +200,20 @@ public class UnsafeSortDataRows {
           } catch (Exception ex) {
             // row page has freed in handlePreviousPage(), so other iterator may try to access it.
             rowPage = null;
-            LOGGER.error(
-                "exception occurred while trying to acquire a semaphore lock: " + ex.getMessage());
+            LOGGER.error("exception occurred while trying to acquire a semaphore lock: "
+                + ex.getMessage(), ex);
             throw new CarbonSortKeyAndGroupByException(ex);
           }
         }
         bytesAdded += rowPage.addRow(rowBatch[i], reUsableByteArrayDataOutputStream.get());
       } catch (Exception e) {
-        if (e.getMessage().contains("cannot handle this row. create new page"))
-        {
+        if (e.getMessage().contains("cannot handle this row. create new page")) {
           rowPage.makeCanAddFail();
           // so that same rowBatch will be handled again in new page
           i--;
         } else {
           LOGGER.error(
-              "exception occurred while trying to acquire a semaphore lock: " + e.getMessage());
+              "exception occurred while trying to acquire a semaphore lock: " + e.getMessage(), e);
           throw new CarbonSortKeyAndGroupByException(e);
         }
       }
@@ -239,20 +236,19 @@ public class UnsafeSortDataRows {
           rowPage = createUnsafeRowPage();
         } catch (Exception ex) {
           rowPage = null;
-          LOGGER.error(
-              "exception occurred while trying to acquire a semaphore lock: " + ex.getMessage());
+          LOGGER.error("exception occurred while trying to acquire a semaphore lock: "
+              + ex.getMessage(), ex);
           throw new CarbonSortKeyAndGroupByException(ex);
         }
       }
       rowPage.addRow(row, reUsableByteArrayDataOutputStream.get());
     } catch (Exception e) {
-      if (e.getMessage().contains("cannot handle this row. create new page"))
-      {
+      if (e.getMessage().contains("cannot handle this row. create new page")) {
         rowPage.makeCanAddFail();
         addRow(row);
       } else {
         LOGGER.error(
-            "exception occurred while trying to acquire a semaphore lock: " + e.getMessage());
+            "exception occurred while trying to acquire a semaphore lock: " + e.getMessage(), e);
         throw new CarbonSortKeyAndGroupByException(e);
       }
     }
@@ -382,7 +378,12 @@ public class UnsafeSortDataRows {
           timSort.sort(page.getBuffer(), 0, page.getBuffer().getActualSize(),
               new UnsafeRowComparatorForNormalDims(page));
         }
-        if (page.isSaveToDisk()) {
+        // get sort storage memory block if memory is available in sort storage manager
+        // if space is available then store it in memory, if memory is not available
+        // then spill to disk
+        MemoryBlock sortStorageMemoryBlock =
+            UnsafeSortMemoryManager.INSTANCE.allocateMemory(taskId, page.getDataBlock().size());
+        if (null == sortStorageMemoryBlock) {
           // create a new file every time
           // create a new file and pick a temp directory randomly every time
           String tmpDir = parameters.getTempFileLocation()[
@@ -400,18 +401,14 @@ public class UnsafeSortDataRows {
           // intermediate merging of sort temp files will be triggered
           unsafeInMemoryIntermediateFileMerger.addFileToMerge(sortTempFile);
         } else {
-          // creating a new memory block as size is already allocated
-          // so calling lazy memory allocator
-          MemoryBlock newMemoryBlock = UnsafeSortMemoryManager.INSTANCE
-              .allocateMemoryLazy(taskId, page.getDataBlock().size());
-          // copying data from working memory manager to sortmemory manager
+          // copying data from working memory manager block to storage memory manager block
           CarbonUnsafe.getUnsafe()
               .copyMemory(page.getDataBlock().getBaseObject(), page.getDataBlock().getBaseOffset(),
-                  newMemoryBlock.getBaseObject(), newMemoryBlock.getBaseOffset(),
-                  page.getDataBlock().size());
+                  sortStorageMemoryBlock.getBaseObject(),
+                  sortStorageMemoryBlock.getBaseOffset(), page.getDataBlock().size());
           // free unsafememory manager
           page.freeMemory();
-          page.setNewDataBlock(newMemoryBlock);
+          page.setNewDataBlock(sortStorageMemoryBlock);
           // add sort temp filename to and arrayList. When the list size reaches 20 then
           // intermediate merging of sort temp files will be triggered
           page.getBuffer().loadToUnsafe();
@@ -424,7 +421,7 @@ public class UnsafeSortDataRows {
         try {
           threadStatusObserver.notifyFailed(e);
         } catch (CarbonSortKeyAndGroupByException ex) {
-          LOGGER.error(e);
+          LOGGER.error(e.getMessage(), e);
         }
       } finally {
         semaphore.release();

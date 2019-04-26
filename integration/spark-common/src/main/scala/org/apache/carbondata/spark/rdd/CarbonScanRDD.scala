@@ -50,20 +50,22 @@ import org.apache.carbondata.core.indexstore.PartitionSpec
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier
 import org.apache.carbondata.core.metadata.schema.table.TableInfo
 import org.apache.carbondata.core.scan.expression.Expression
+import org.apache.carbondata.core.scan.expression.conditional.ImplicitExpression
 import org.apache.carbondata.core.scan.filter.FilterUtil
 import org.apache.carbondata.core.scan.model.QueryModel
 import org.apache.carbondata.core.stats.{QueryStatistic, QueryStatisticsConstants}
 import org.apache.carbondata.core.statusmanager.FileFormat
 import org.apache.carbondata.core.util._
+import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.hadoop._
 import org.apache.carbondata.hadoop.api.{CarbonFileInputFormat, CarbonInputFormat}
 import org.apache.carbondata.hadoop.api.CarbonTableInputFormat
 import org.apache.carbondata.hadoop.readsupport.CarbonReadSupport
+import org.apache.carbondata.hadoop.stream.CarbonStreamInputFormat
 import org.apache.carbondata.hadoop.util.CarbonInputFormatUtil
 import org.apache.carbondata.processing.util.CarbonLoaderUtil
 import org.apache.carbondata.spark.InitInputMetrics
 import org.apache.carbondata.spark.util.Util
-import org.apache.carbondata.streaming.CarbonStreamInputFormat
 
 /**
  * This RDD is used to perform query on CarbonData file. Before sending tasks to scan
@@ -230,7 +232,11 @@ class CarbonScanRDD[T: ClassTag](
       statistic.addStatistics(QueryStatisticsConstants.BLOCK_ALLOCATION, System.currentTimeMillis)
       statisticRecorder.recordStatisticsForDriver(statistic, queryId)
       statistic = new QueryStatistic()
-      val carbonDistribution = if (directFill) {
+      // When the table has column drift, it means different blocks maybe have different schemas.
+      // the query doesn't support to scan the blocks with different schemas in a task.
+      // So if the table has the column drift, CARBON_TASK_DISTRIBUTION_MERGE_FILES and
+      // CARBON_TASK_DISTRIBUTION_CUSTOM can't work.
+      val carbonDistribution = if (directFill && !tableInfo.hasColumnDrift) {
         CarbonCommonConstants.CARBON_TASK_DISTRIBUTION_MERGE_FILES
       } else {
         CarbonProperties.getInstance().getProperty(
@@ -258,7 +264,7 @@ class CarbonScanRDD[T: ClassTag](
             CarbonCommonConstants.CARBON_CUSTOM_BLOCK_DISTRIBUTION,
             "false").toBoolean ||
           carbonDistribution.equalsIgnoreCase(CarbonCommonConstants.CARBON_TASK_DISTRIBUTION_CUSTOM)
-        if (useCustomDistribution) {
+        if (useCustomDistribution && !tableInfo.hasColumnDrift) {
           // create a list of block based on split
           val blockList = splits.asScala.map(_.asInstanceOf[Distributable])
 
@@ -295,14 +301,14 @@ class CarbonScanRDD[T: ClassTag](
             val partition = new CarbonSparkPartition(id, splitWithIndex._2, multiBlockSplit)
             result.add(partition)
           }
-        } else if (carbonDistribution.equalsIgnoreCase(
+        } else if (!tableInfo.hasColumnDrift && carbonDistribution.equalsIgnoreCase(
             CarbonCommonConstants.CARBON_TASK_DISTRIBUTION_MERGE_FILES)) {
 
           // sort blocks in reverse order of length
           val blockSplits = splits
             .asScala
             .map(_.asInstanceOf[CarbonInputSplit])
-            .groupBy(f => f.getBlockPath)
+            .groupBy(f => f.getFilePath)
             .map { blockSplitEntry =>
               new CarbonMultiBlockSplit(
                 blockSplitEntry._2.asJava,
@@ -342,13 +348,12 @@ class CarbonScanRDD[T: ClassTag](
           closePartition()
         } else {
           // Use block distribution
-          splits.asScala.map(_.asInstanceOf[CarbonInputSplit]).groupBy { f =>
-            f.getSegmentId.concat(f.getBlockPath)
-          }.values.zipWithIndex.foreach { splitWithIndex =>
+          splits.asScala.map(_.asInstanceOf[CarbonInputSplit]).zipWithIndex.foreach {
+            splitWithIndex =>
             val multiBlockSplit =
               new CarbonMultiBlockSplit(
-                splitWithIndex._1.asJava,
-                splitWithIndex._1.flatMap(f => f.getLocations).distinct.toArray)
+                Seq(splitWithIndex._1).asJava,
+                null)
             val partition = new CarbonSparkPartition(id, splitWithIndex._2, multiBlockSplit)
             result.add(partition)
           }
@@ -416,7 +421,7 @@ class CarbonScanRDD[T: ClassTag](
     TaskMetricsMap.getInstance().registerThreadCallback()
     inputMetricsStats.initBytesReadCallback(context, inputSplit)
     val iterator = if (inputSplit.getAllSplits.size() > 0) {
-      val model = format.createQueryModel(inputSplit, attemptContext)
+      val model = format.createQueryModel(inputSplit, attemptContext, filterExpression)
       // one query id per table
       model.setQueryId(queryId)
       // get RecordReader by FileFormat
@@ -687,6 +692,33 @@ class CarbonScanRDD[T: ClassTag](
       if (identifiedPartitions.nonEmpty &&
           !checkForBlockWithoutBlockletInfo(identifiedPartitions)) {
         FilterUtil.removeInExpressionNodeWithPositionIdColumn(filterExpression)
+      } else if (identifiedPartitions.nonEmpty) {
+        // the below piece of code will serialize only the required blocklet ids
+        val filterValues = FilterUtil.getImplicitFilterExpression(filterExpression)
+        if (null != filterValues) {
+          val implicitExpression = filterValues.asInstanceOf[ImplicitExpression]
+          identifiedPartitions.foreach { partition =>
+            // for each partition get the list if input split
+            val inputSplit = partition.asInstanceOf[CarbonSparkPartition].split.value
+            val splitList = if (inputSplit.isInstanceOf[CarbonMultiBlockSplit]) {
+              inputSplit.asInstanceOf[CarbonMultiBlockSplit].getAllSplits
+            } else {
+              new java.util.ArrayList().add(inputSplit.asInstanceOf[CarbonInputSplit])
+            }.asInstanceOf[java.util.List[CarbonInputSplit]]
+            // for each split and given block path set all the valid blocklet ids
+            splitList.asScala.map { split =>
+              val uniqueBlockPath = split.getFilePath
+              val shortBlockPath = CarbonTablePath
+                .getShortBlockId(uniqueBlockPath
+                  .substring(uniqueBlockPath.lastIndexOf("/Part") + 1))
+              val blockletIds = implicitExpression.getBlockIdToBlockletIdMapping.get(shortBlockPath)
+              split.setValidBlockletIds(blockletIds)
+            }
+          }
+          // remove the right child of the expression here to prevent serialization of
+          // implicit filter values to executor
+          FilterUtil.setTrueExpressionAsRightChild(filterExpression)
+        }
       }
     }
   }

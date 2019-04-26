@@ -22,13 +22,12 @@ import java.util.List;
 
 import org.apache.carbondata.core.indexstore.BlockletDetailInfo;
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion;
+import org.apache.carbondata.core.statusmanager.FileFormat;
 import org.apache.carbondata.hadoop.CarbonInputSplit;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.gson.Gson;
-
-import org.apache.hadoop.fs.Path;
 
 /**
  * CarbonLocalInputSplit represents a block, it contains a set of blocklet.
@@ -44,9 +43,9 @@ public class CarbonLocalInputSplit {
   private short version;
   private String[] deleteDeltaFiles;
   private String blockletId;
-
-
   private String detailInfo;
+  private int fileFormatOrdinal;
+  private FileFormat fileFormat;
 
   /**
    * Number of BlockLets in a block
@@ -93,6 +92,14 @@ public class CarbonLocalInputSplit {
     return blockletId;
   }
 
+  @JsonProperty public int getFileFormatOrdinal() {
+    return fileFormatOrdinal;
+  }
+
+  public FileFormat getFileFormat() {
+    return fileFormat;
+  }
+
   public void setDetailInfo(BlockletDetailInfo blockletDetailInfo) {
     Gson gson = new Gson();
     detailInfo = gson.toJson(blockletDetailInfo);
@@ -107,7 +114,8 @@ public class CarbonLocalInputSplit {
       @JsonProperty("version") short version,
       @JsonProperty("deleteDeltaFiles") String[] deleteDeltaFiles,
       @JsonProperty("blockletId") String blockletId,
-      @JsonProperty("detailInfo") String detailInfo
+      @JsonProperty("detailInfo") String detailInfo,
+      @JsonProperty("fileFormatOrdinal") int fileFormatOrdinal
   ) {
     this.path = path;
     this.start = start;
@@ -120,30 +128,34 @@ public class CarbonLocalInputSplit {
     this.deleteDeltaFiles = deleteDeltaFiles;
     this.blockletId = blockletId;
     this.detailInfo = detailInfo;
-
+    this.fileFormatOrdinal = fileFormatOrdinal;
+    this.fileFormat = FileFormat.getByOrdinal(fileFormatOrdinal);
   }
 
   public static CarbonInputSplit convertSplit(CarbonLocalInputSplit carbonLocalInputSplit) {
     CarbonInputSplit inputSplit = new CarbonInputSplit(carbonLocalInputSplit.getSegmentId(),
-        carbonLocalInputSplit.getBlockletId(), new Path(carbonLocalInputSplit.getPath()),
+        carbonLocalInputSplit.getBlockletId(), carbonLocalInputSplit.getPath(),
         carbonLocalInputSplit.getStart(), carbonLocalInputSplit.getLength(),
         carbonLocalInputSplit.getLocations()
             .toArray(new String[carbonLocalInputSplit.getLocations().size()]),
         carbonLocalInputSplit.getNumberOfBlocklets(),
         ColumnarFormatVersion.valueOf(carbonLocalInputSplit.getVersion()),
         carbonLocalInputSplit.getDeleteDeltaFiles());
-    Gson gson = new Gson();
-    BlockletDetailInfo blockletDetailInfo =
-        gson.fromJson(carbonLocalInputSplit.detailInfo, BlockletDetailInfo.class);
-    if (null == blockletDetailInfo) {
-      throw new RuntimeException("Could not read blocklet details");
+    inputSplit.setFormat(carbonLocalInputSplit.getFileFormat());
+    if (FileFormat.COLUMNAR_V3.ordinal() == inputSplit.getFileFormat().ordinal()) {
+      Gson gson = new Gson();
+      BlockletDetailInfo blockletDetailInfo =
+          gson.fromJson(carbonLocalInputSplit.detailInfo, BlockletDetailInfo.class);
+      if (null == blockletDetailInfo) {
+        throw new RuntimeException("Could not read blocklet details");
+      }
+      try {
+        blockletDetailInfo.readColumnSchema(blockletDetailInfo.getColumnSchemaBinary());
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+      inputSplit.setDetailInfo(blockletDetailInfo);
     }
-    try {
-      blockletDetailInfo.readColumnSchema(blockletDetailInfo.getColumnSchemaBinary());
-    } catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-    inputSplit.setDetailInfo(blockletDetailInfo);
     return inputSplit;
   }
 

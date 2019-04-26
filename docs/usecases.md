@@ -1,3 +1,20 @@
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one or more 
+    contributor license agreements.  See the NOTICE file distributed with
+    this work for additional information regarding copyright ownership. 
+    The ASF licenses this file to you under the Apache License, Version 2.0
+    (the "License"); you may not use this file except in compliance with 
+    the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+    
+    Unless required by applicable law or agreed to in writing, software 
+    distributed under the License is distributed on an "AS IS" BASIS, 
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and 
+    limitations under the License.
+-->
+
 # Use Cases
 
 CarbonData is useful in various analytical work loads.Some of the most typical usecases where CarbonData is being used is documented here.
@@ -131,8 +148,8 @@ Use all columns are no-dictionary as the cardinality is high.
 | Compaction | carbon.number.of.cores.while.compacting | 12                      | Higher number of cores can improve the compaction speed.Data size is huge.Compaction need to use more threads to speed up the process |
 | Compaction | carbon.enable.auto.load.merge           | FALSE                   | Doing auto minor compaction is costly process as data size is huge.Perform manual compaction when the cluster is less loaded |
 | Query | carbon.enable.vector.reader             | true                    | To fetch results faster, supporting spark vector processing will speed up the query |
-| Query | enable.unsafe.in.query.procressing      | true                    | Data that needs to be scanned in huge which in turn generates more short lived Java objects. This cause pressure of GC.using unsafe and offheap will reduce the GC overhead |
-| Query | use.offheap.in.query.processing         | true                    | Data that needs to be scanned in huge which in turn generates more short lived Java objects. This cause pressure of GC.using unsafe and offheap will reduce the GC overhead.offheap can be accessed through java unsafe.hence enable.unsafe.in.query.procressing needs to be true |
+| Query | enable.unsafe.in.query.processing      | true                    | Data that needs to be scanned in huge which in turn generates more short lived Java objects. This cause pressure of GC.using unsafe and offheap will reduce the GC overhead |
+| Query | use.offheap.in.query.processing         | true                    | Data that needs to be scanned in huge which in turn generates more short lived Java objects. This cause pressure of GC.using unsafe and offheap will reduce the GC overhead.offheap can be accessed through java unsafe.hence enable.unsafe.in.query.processing needs to be true |
 | Query | enable.unsafe.columnpage                | TRUE                    | Keep the column pages in offheap memory so that the memory overhead due to java object is less and also reduces GC pressure. |
 | Query | carbon.unsafe.working.memory.in.mb      | 10240                   | Amount of memory to use for offheap operations, you can increase this memory based on the data size |
 

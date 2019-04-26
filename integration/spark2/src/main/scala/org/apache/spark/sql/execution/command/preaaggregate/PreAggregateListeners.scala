@@ -257,7 +257,7 @@ object AlterTableDropPartitionMetaListener extends OperationEventListener{
     if (parentCarbonTable.hasAggregationDataMap) {
       // used as a flag to block direct drop partition on aggregate tables fired by the user
       operationContext.setProperty("isInternalDropCall", "true")
-      // Filter out all the tables which dont have the partition being dropped.
+      // Filter out all the tables which don't have the partition being dropped.
       val childTablesWithoutPartitionColumns =
         parentCarbonTable.getTableInfo.getDataMapSchemaList.asScala.filter { dataMapSchema =>
           val childColumns = dataMapSchema.getChildSchema.getListOfColumns.asScala
@@ -349,7 +349,8 @@ object CompactionProcessMetaListener extends OperationEventListener {
           TableIdentifier(childTableName, Some(childDatabaseName)),
           childDataFrame,
           false,
-          sparkSession)
+          sparkSession,
+          mutable.Map.empty[String, String])
         val uuid = Option(operationContext.getProperty("uuid")).
           getOrElse(UUID.randomUUID()).toString
         operationContext.setProperty("uuid", uuid)
@@ -377,7 +378,8 @@ object CompactionProcessMetaListener extends OperationEventListener {
         TableIdentifier(childTableName, Some(childDatabaseName)),
         childDataFrame,
         false,
-        sparkSession)
+        sparkSession,
+        mutable.Map.empty[String, String])
       val uuid = Option(operationContext.getProperty("uuid")).getOrElse(UUID.randomUUID()).toString
       loadCommand.processMetadata(sparkSession)
       operationContext.setProperty(table.getTableName + "_Compaction", loadCommand)
@@ -453,6 +455,7 @@ object LoadProcessMetaListener extends OperationEventListener {
             childDataFrame,
             isOverwrite,
             sparkSession,
+            tableEvent.getOptions.asScala,
             timeseriesParentTableName = childSelectQuery._2)
           operationContext.setProperty("uuid", uuid)
           loadCommand.operationContext.setProperty("uuid", uuid)
@@ -729,9 +732,11 @@ object PreAggregateDataTypeChangePreListener extends OperationEventListener {
    * @param operationContext
    */
   override def onEvent(event: Event, operationContext: OperationContext): Unit = {
-    val dataTypeChangePreListener = event.asInstanceOf[AlterTableDataTypeChangePreEvent]
-    val carbonTable = dataTypeChangePreListener.carbonTable
-    val alterTableDataTypeChangeModel = dataTypeChangePreListener.alterTableDataTypeChangeModel
+    val colRenameDataTypeChangePreListener = event
+      .asInstanceOf[AlterTableColRenameAndDataTypeChangePreEvent]
+    val carbonTable = colRenameDataTypeChangePreListener.carbonTable
+    val alterTableDataTypeChangeModel = colRenameDataTypeChangePreListener
+      .alterTableDataTypeChangeModel
     val columnToBeAltered: String = alterTableDataTypeChangeModel.columnName
     if (CarbonUtil.hasAggregationDataMap(carbonTable)) {
       val dataMapSchemas = carbonTable.getTableInfo.getDataMapSchemaList
@@ -748,7 +753,8 @@ object PreAggregateDataTypeChangePreListener extends OperationEventListener {
     }
     if (carbonTable.isChildDataMap) {
       throw new UnsupportedOperationException(
-        s"Cannot change data type for columns in pre-aggregate table ${ carbonTable.getDatabaseName
+        s"Cannot change data type or rename column for columns in pre-aggregate table ${
+          carbonTable.getDatabaseName
         }.${ carbonTable.getTableName }")
     }
   }

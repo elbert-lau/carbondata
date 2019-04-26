@@ -31,6 +31,7 @@ import java.util.List;
 import org.apache.carbondata.core.metadata.blocklet.datachunk.DataChunk;
 import org.apache.carbondata.core.metadata.blocklet.index.BlockletIndex;
 
+import org.apache.commons.io.input.ClassLoaderObjectInputStream;
 import org.apache.hadoop.io.Writable;
 
 /**
@@ -88,6 +89,8 @@ public class BlockletInfo implements Serializable, Writable {
   private int numberOfPages = 1;
 
   private int[] numberOfRowsPerPage;
+
+  private Boolean isSorted = true;
 
   /**
    * @return the numberOfRows
@@ -222,6 +225,17 @@ public class BlockletInfo implements Serializable, Writable {
     }
     writeChunkInfoForOlderVersions(output);
 
+    boolean isSortedPresent = (isSorted != null);
+    output.writeBoolean(isSortedPresent);
+    if (isSortedPresent) {
+      output.writeBoolean(isSorted);
+    }
+    if (null != getNumberOfRowsPerPage()) {
+      output.writeShort(getNumberOfRowsPerPage().length);
+      for (int i = 0; i < getNumberOfRowsPerPage().length; i++) {
+        output.writeInt(getNumberOfRowsPerPage()[i]);
+      }
+    }
   }
 
   /**
@@ -254,7 +268,8 @@ public class BlockletInfo implements Serializable, Writable {
 
   private DataChunk deserializeDataChunk(byte[] bytes) throws IOException {
     ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
-    ObjectInputStream inputStream = new ObjectInputStream(stream);
+    ObjectInputStream inputStream =
+        new ClassLoaderObjectInputStream(Thread.currentThread().getContextClassLoader(), stream);
     DataChunk dataChunk = null;
     try {
       dataChunk = (DataChunk) inputStream.readObject();
@@ -288,6 +303,14 @@ public class BlockletInfo implements Serializable, Writable {
       measureChunksLength.add(input.readInt());
     }
     readChunkInfoForOlderVersions(input);
+    final boolean isSortedPresent = input.readBoolean();
+    if (isSortedPresent) {
+      this.isSorted = input.readBoolean();
+    }
+    numberOfRowsPerPage = new int[input.readShort()];
+    for (int i = 0; i < numberOfRowsPerPage.length; i++) {
+      numberOfRowsPerPage[i] = input.readInt();
+    }
   }
 
   /**
@@ -316,5 +339,13 @@ public class BlockletInfo implements Serializable, Writable {
 
   public void setNumberOfRowsPerPage(int[] numberOfRowsPerPage) {
     this.numberOfRowsPerPage = numberOfRowsPerPage;
+  }
+
+  public Boolean isSorted() {
+    return isSorted;
+  }
+
+  public void setSorted(Boolean sorted) {
+    isSorted = sorted;
   }
 }

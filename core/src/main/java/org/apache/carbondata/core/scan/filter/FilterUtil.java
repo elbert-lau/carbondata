@@ -71,6 +71,7 @@ import org.apache.carbondata.core.scan.expression.Expression;
 import org.apache.carbondata.core.scan.expression.ExpressionResult;
 import org.apache.carbondata.core.scan.expression.LiteralExpression;
 import org.apache.carbondata.core.scan.expression.conditional.ConditionalExpression;
+import org.apache.carbondata.core.scan.expression.conditional.ImplicitExpression;
 import org.apache.carbondata.core.scan.expression.conditional.InExpression;
 import org.apache.carbondata.core.scan.expression.conditional.ListExpression;
 import org.apache.carbondata.core.scan.expression.exception.FilterIllegalMemberException;
@@ -939,7 +940,7 @@ public final class FilterUtil {
         columnFilterInfo.setFilterList(filterValuesList);
       }
     } catch (FilterIllegalMemberException e) {
-      LOGGER.error(e.getMessage());
+      LOGGER.error(e.getMessage(), e);
     }
     return columnFilterInfo;
   }
@@ -979,7 +980,7 @@ public final class FilterUtil {
         }
       }
     } catch (FilterIllegalMemberException e) {
-      LOGGER.error(e.getMessage());
+      LOGGER.error(e.getMessage(), e);
     }
 
     if (null == defaultValues) {
@@ -1019,7 +1020,7 @@ public final class FilterUtil {
               break;
             }
           } catch (KeyGenException e) {
-            LOGGER.error(e.getMessage());
+            LOGGER.error(e.getMessage(), e);
           }
         }
       }
@@ -1094,7 +1095,7 @@ public final class FilterUtil {
       keys[carbonDimension.getKeyOrdinal()] = surrogate;
       maskedKey = getMaskedKey(rangesForMaskedByte, blockLevelKeyGenerator.generateKey(keys));
     } catch (KeyGenException e) {
-      LOGGER.error(e.getMessage());
+      LOGGER.error(e.getMessage(), e);
     }
     return maskedKey;
   }
@@ -1437,7 +1438,7 @@ public final class FilterUtil {
       indexKey =
           new IndexKey(keyGenerator.generateKey(startOrEndKey), startOrEndKeyForNoDictDimension);
     } catch (KeyGenException e) {
-      LOGGER.error(e.getMessage());
+      LOGGER.error(e.getMessage(), e);
     }
     return indexKey;
   }
@@ -1996,16 +1997,16 @@ public final class FilterUtil {
    * This method will get the no dictionary data based on filters and same
    * will be in DimColumnFilterInfo
    *
-   * @param evaluateResultListFinal
+   * @param implicitColumnFilterList
    * @param isIncludeFilter
    * @return
    */
-  public static ColumnFilterInfo getImplicitColumnFilterList(List<String> evaluateResultListFinal,
-      boolean isIncludeFilter) {
+  public static ColumnFilterInfo getImplicitColumnFilterList(
+      Map<String, Set<Integer>> implicitColumnFilterList, boolean isIncludeFilter) {
     ColumnFilterInfo columnFilterInfo = new ColumnFilterInfo();
     columnFilterInfo.setIncludeFilter(isIncludeFilter);
-    if (null != evaluateResultListFinal) {
-      columnFilterInfo.setImplicitColumnFilterList(evaluateResultListFinal);
+    if (null != implicitColumnFilterList) {
+      columnFilterInfo.setImplicitColumnFilterBlockToBlockletsMap(implicitColumnFilterList);
     }
     return columnFilterInfo;
   }
@@ -2019,6 +2020,44 @@ public final class FilterUtil {
    * @param expression
    */
   public static void removeInExpressionNodeWithPositionIdColumn(Expression expression) {
+    if (null != getImplicitFilterExpression(expression)) {
+      setTrueExpressionAsRightChild(expression);
+    }
+  }
+
+  /**
+   * This method will check for ColumnExpression with column name positionID and if found will
+   * replace the InExpression with true expression. This is done to stop serialization of List
+   * expression which is right children of InExpression as it can impact the query performance
+   * as the size of list grows bigger.
+   *
+   * @param expression
+   */
+  public static void setTrueExpressionAsRightChild(Expression expression) {
+    setNewExpressionForRightChild(expression, new TrueExpression(null));
+  }
+
+  /**
+   * Method to remove right child of the AND expression and set new expression for right child
+   *
+   * @param expression
+   * @param rightChild
+   */
+  public static void setNewExpressionForRightChild(Expression expression, Expression rightChild) {
+    // Remove the right expression node and point the expression to left node expression
+    expression.findAndSetChild(((AndExpression) expression).getRight(), rightChild);
+    LOGGER.info("In expression removed from the filter expression list to prevent it from"
+        + " serializing on executor");
+  }
+
+  /**
+   * This methdd will check if ImplictFilter is present or not
+   * if it is present then return that ImplicitFilterExpression
+   *
+   * @param expression
+   * @return
+   */
+  public static Expression getImplicitFilterExpression(Expression expression) {
     ExpressionType filterExpressionType = expression.getFilterExpressionType();
     if (ExpressionType.AND == filterExpressionType) {
       Expression rightExpression = ((AndExpression) expression).getRight();
@@ -2030,14 +2069,30 @@ public final class FilterUtil {
           if (childExpression instanceof ColumnExpression && ((ColumnExpression) childExpression)
               .getColumnName().equalsIgnoreCase(CarbonCommonConstants.POSITION_ID)) {
             // Remove the right expression node and point the expression to left node expression
-            expression
-                .findAndSetChild(((AndExpression) expression).getRight(), new TrueExpression(null));
-            LOGGER.info("In expression removed from the filter expression list to prevent it from"
-                + " serializing on executor");
+            // if 1st children is implict column positionID then 2nd children will be
+            // implicit filter list
+            return children.get(1);
           }
         }
       }
     }
+    return null;
+  }
+
+  /**
+   * This method will create implicit expression and set as right child in the current expression
+   *
+   * @param expression
+   * @param blockIdToBlockletIdMapping
+   */
+  public static void createImplicitExpressionAndSetAsRightChild(Expression expression,
+      Map<String, Set<Integer>> blockIdToBlockletIdMapping) {
+    ColumnExpression columnExpression =
+        new ColumnExpression(CarbonCommonConstants.POSITION_ID, DataTypes.STRING);
+    ImplicitExpression implicitExpression = new ImplicitExpression(blockIdToBlockletIdMapping);
+    InExpression inExpression = new InExpression(columnExpression, implicitExpression);
+    setNewExpressionForRightChild(expression, inExpression);
+    LOGGER.info("Implicit expression added to the filter expression");
   }
 
   /**
@@ -2069,7 +2124,7 @@ public final class FilterUtil {
             dummy[0] = i;
             encodedFilters.add(keyGenerator.generateKey(dummy));
           } catch (KeyGenException e) {
-            LOGGER.error(e);
+            LOGGER.error(e.getMessage(), e);
           }
           break;
         }
@@ -2160,7 +2215,7 @@ public final class FilterUtil {
           encodedFilterValues.add(keyGenerator.generateKey(dummy));
         }
       } catch (KeyGenException e) {
-        LOGGER.error(e);
+        LOGGER.error(e.getMessage(), e);
       }
       return encodedFilterValues.toArray(new byte[encodedFilterValues.size()][]);
     } else {
@@ -2172,7 +2227,7 @@ public final class FilterUtil {
           }
         }
       } catch (KeyGenException e) {
-        LOGGER.error(e);
+        LOGGER.error(e.getMessage(), e);
       }
     }
     return getSortedEncodedFilters(encodedFilterValues);
@@ -2265,9 +2320,18 @@ public final class FilterUtil {
       defaultValue = FilterUtil
           .getMaskKey(key, currentBlockDimension, segmentProperties.getSortColumnsGenerator());
     } else {
-      defaultValue = ByteUtil.toXorBytes(key);
+      defaultValue = FilterUtil
+          .getMaskKey(key, currentBlockDimension, segmentProperties.getDimensionKeyGenerator());
     }
     return defaultValue;
+  }
+
+  public static void setMinMaxFlagForLegacyStore(boolean[] minMaxFlag,
+      SegmentProperties segmentProperties) {
+    int index = segmentProperties.getEachDimColumnValueSize().length + segmentProperties
+        .getEachComplexDimColumnValueSize().length;
+    Arrays.fill(minMaxFlag, 0, index, true);
+    Arrays.fill(minMaxFlag, index, minMaxFlag.length, false);
   }
 
 }

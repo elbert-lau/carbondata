@@ -18,22 +18,25 @@
 package org.apache.spark.sql.common.util
 
 import java.io.{ObjectInputStream, ObjectOutputStream}
-import java.util.{Locale, TimeZone}
+import java.sql.{Connection, DriverManager, ResultSet}
+import java.util.{Locale, Properties}
 
-import org.apache.carbondata.common.logging.LogServiceFactory
 import scala.collection.JavaConversions._
+import scala.util.{Failure, Success, Try}
 
+import com.facebook.presto.jdbc.{PrestoConnection, PrestoStatement}
+import org.apache.spark.sql.carbondata.execution.datasources.CarbonFileIndexReplaceRule
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.execution.command.LoadDataCommand
-import org.apache.spark.sql.hive.{CarbonSessionCatalog}
+import org.apache.spark.sql.hive.CarbonSessionCatalog
 import org.apache.spark.sql.test.{ResourceRegisterAndCopier, TestQueryExecutor}
-import org.apache.spark.sql.{CarbonSession, DataFrame, Row, SQLContext}
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 import org.scalatest.Suite
 
-import org.apache.carbondata.core.constants.CarbonCommonConstants
+import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.datastore.impl.FileFactory
-import org.apache.carbondata.core.util.CarbonProperties
+import org.apache.commons.lang.StringUtils
 
 class QueryTest extends PlanTest with Suite {
 
@@ -43,8 +46,6 @@ class QueryTest extends PlanTest with Suite {
 
   // Add Locale setting
   Locale.setDefault(Locale.US)
-  CarbonProperties.getInstance()
-    .addProperty(CarbonCommonConstants.VALIDATE_DIRECT_QUERY_ON_DATAMAP, "false")
 
   /**
    * Runs the plan and makes sure the answer contains all of the keywords, or the
@@ -138,6 +139,8 @@ class QueryTest extends PlanTest with Suite {
 
   val sqlContext: SQLContext = TestQueryExecutor.INSTANCE.sqlContext
 
+  sqlContext.sparkSession.experimental.extraOptimizations :+ Seq(new CarbonFileIndexReplaceRule)
+
   val resourcesPath = TestQueryExecutor.resourcesPath
 
   val hiveClient = sqlContext.sparkSession.sessionState.catalog.asInstanceOf[CarbonSessionCatalog]
@@ -152,8 +155,6 @@ object QueryTest {
       case None => null
     }
   }
-
-  import java.text.DecimalFormat
 
   /**
    * Runs the plan and makes sure the answer matches the expected result.
@@ -219,4 +220,87 @@ object QueryTest {
 
     return None
   }
+
+  object PrestoQueryTest {
+
+    var statement : PrestoStatement = _
+
+    def initJdbcConnection(dbName: String): Unit = {
+      val conn: Connection = if (System.getProperty("presto.jdbc.url") != null) {
+        createJdbcConnection(dbName, System.getProperty("presto.jdbc.url"))
+      } else {
+        createJdbcConnection(dbName, "localhost:8086")
+      }
+      statement = conn.createStatement().asInstanceOf[PrestoStatement]
+    }
+
+    def closeJdbcConnection(): Unit = {
+      statement.close()
+    }
+
+    /**
+     * execute the query by establishing the jdbc connection
+     *
+     * @param query
+     * @return
+     */
+    def executeQuery(query: String): List[Map[String, Any]] = {
+      Try {
+        val result: ResultSet = statement.executeQuery(query)
+        convertResultSetToList(result)
+      } match {
+        case Success(result) => result
+        case Failure(jdbcException) =>
+          throw jdbcException
+      }
+    }
+
+    /**
+     * Creates a JDBC Client to connect CarbonData to Presto
+     *
+     * @return
+     */
+    private def createJdbcConnection(dbName: String, url: String) = {
+      val JDBC_DRIVER = "com.facebook.presto.jdbc.PrestoDriver"
+      var DB_URL : String = null
+      if (StringUtils.isEmpty(dbName)) {
+        DB_URL = "jdbc:presto://"+ url + "/carbondata/default"
+      } else {
+        DB_URL = "jdbc:presto://" + url + "/carbondata/" + dbName
+      }
+      val properties = new Properties
+      // The database Credentials
+      properties.setProperty("user", "test")
+
+      // STEP 2: Register JDBC driver
+      Class.forName(JDBC_DRIVER)
+      // STEP 3: Open a connection
+      DriverManager.getConnection(DB_URL, properties)
+    }
+
+    /**
+     * convert result set into scala list of map
+     * each map represents a row
+     *
+     * @param queryResult
+     * @return
+     */
+    private def convertResultSetToList(queryResult: ResultSet): List[Map[String, Any]] = {
+      val metadata = queryResult.getMetaData
+      val colNames = (1 to metadata.getColumnCount) map metadata.getColumnName
+      Iterator.continually(buildMapFromQueryResult(queryResult, colNames)).takeWhile(_.isDefined)
+        .map(_.get).toList
+    }
+
+    private def buildMapFromQueryResult(queryResult: ResultSet,
+        colNames: Seq[String]): Option[Map[String, Any]] = {
+      if (queryResult.next()) {
+        Some(colNames.map(name => name -> queryResult.getObject(name)).toMap)
+      }
+      else {
+        None
+      }
+    }
+  }
+
 }

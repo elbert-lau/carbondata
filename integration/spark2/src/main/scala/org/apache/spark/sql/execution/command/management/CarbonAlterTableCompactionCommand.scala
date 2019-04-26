@@ -88,11 +88,6 @@ case class CarbonAlterTableCompactionCommand(
     if (!table.getTableInfo.isTransactionalTable) {
       throw new MalformedCarbonCommandException("Unsupported operation on non transactional table")
     }
-    if (table.getTableInfo.getFactTable.getListOfColumns.asScala
-      .exists((m => DataTypes.isMapType(m.getDataType)))) {
-      throw new UnsupportedOperationException(
-        "Compaction is unsupported for Table containing Map Columns")
-    }
     if (CarbonUtil.hasAggregationDataMap(table) ||
         (table.isChildDataMap && null == operationContext.getProperty(table.getTableName))) {
       // If the compaction request is of 'streaming' type then we need to generate loadCommands
@@ -100,9 +95,9 @@ case class CarbonAlterTableCompactionCommand(
       // If set to true then only loadCommands for compaction will be created.
       val loadMetadataEvent =
         if (alterTableModel.compactionType.equalsIgnoreCase(CompactionType.STREAMING.name())) {
-          new LoadMetadataEvent(table, false)
+          new LoadMetadataEvent(table, false, Map.empty[String, String].asJava)
         } else {
-          new LoadMetadataEvent(table, true)
+          new LoadMetadataEvent(table, true, Map.empty[String, String].asJava)
         }
       OperationListenerBus.getInstance().fireEvent(loadMetadataEvent, operationContext)
     }
@@ -293,31 +288,38 @@ case class CarbonAlterTableCompactionCommand(
       val lock = CarbonLockFactory.getCarbonLockObj(
         carbonTable.getAbsoluteTableIdentifier,
         LockUsage.COMPACTION_LOCK)
-
-      if (lock.lockWithRetries()) {
-        LOGGER.info("Acquired the compaction lock for table" +
-                    s" ${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
-        try {
-          CarbonDataRDDFactory.startCompactionThreads(
-            sqlContext,
-            carbonLoadModel,
-            storeLocation,
-            compactionModel,
-            lock,
-            compactedSegments,
-            operationContext
-          )
-        } catch {
-          case e: Exception =>
-            LOGGER.error(s"Exception in start compaction thread. ${ e.getMessage }")
-            lock.unlock()
-            throw e
+      val updateLock = CarbonLockFactory.getCarbonLockObj(carbonTable
+        .getAbsoluteTableIdentifier, LockUsage.UPDATE_LOCK)
+      try {
+        if (updateLock.lockWithRetries(3, 3)) {
+          if (lock.lockWithRetries()) {
+            LOGGER.info("Acquired the compaction lock for table" +
+                        s" ${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
+            CarbonDataRDDFactory.startCompactionThreads(
+              sqlContext,
+              carbonLoadModel,
+              storeLocation,
+              compactionModel,
+              lock,
+              compactedSegments,
+              operationContext
+            )
+          } else {
+            LOGGER.error(s"Not able to acquire the compaction lock for table" +
+                         s" ${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
+            CarbonException.analysisException(
+              "Table is already locked for compaction. Please try after some time.")
+          }
+        } else {
+          throw new ConcurrentOperationException(carbonTable, "update", "compaction")
         }
-      } else {
-        LOGGER.error(s"Not able to acquire the compaction lock for table" +
-                     s" ${ carbonLoadModel.getDatabaseName }.${ carbonLoadModel.getTableName }")
-        CarbonException.analysisException(
-          "Table is already locked for compaction. Please try after some time.")
+      } catch {
+        case e: Exception =>
+          LOGGER.error(s"Exception in start compaction thread.", e)
+          lock.unlock()
+          throw e
+      } finally {
+        updateLock.unlock()
       }
     }
   }

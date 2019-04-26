@@ -33,8 +33,9 @@ import org.apache.avro.file.DataFileWriter
 import org.apache.avro.generic.{GenericDatumReader, GenericDatumWriter, GenericRecord}
 import org.apache.avro.io.{DecoderFactory, Encoder}
 import org.apache.commons.io.FileUtils
+import org.apache.commons.lang.RandomStringUtils
 import org.apache.spark.sql.test.util.QueryTest
-import org.apache.spark.sql.{CarbonEnv, Row}
+import org.apache.spark.sql.{AnalysisException, CarbonEnv, Row}
 import org.junit.Assert
 import org.scalatest.BeforeAndAfterAll
 
@@ -51,6 +52,8 @@ import org.apache.carbondata.core.datastore.impl.FileFactory
 import org.apache.carbondata.core.datastore.page.encoding.DefaultEncodingFactory
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion
 import org.apache.carbondata.core.metadata.datatype.DataTypes
+import org.apache.carbondata.core.reader.CarbonFooterReaderV3
+import org.apache.carbondata.core.util.path.CarbonTablePath
 import org.apache.carbondata.core.util.{CarbonMetadataUtil, CarbonProperties, CarbonUtil, DataFileFooterConverterV3}
 import org.apache.carbondata.processing.loading.exception.CarbonDataLoadingException
 import org.apache.carbondata.sdk.file._
@@ -119,6 +122,13 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
     buildTestData(rows, options, List("name"))
   }
 
+  def buildTestDataWithOptionsAndEmptySortColumn(rows: Int,
+      options: util.Map[String, String]): Any = {
+    FileUtils.deleteDirectory(new File(writerPath))
+    buildTestData(rows, options, List())
+  }
+
+
   // prepare sdk writer output
   def buildTestData(rows: Int,
       options: util.Map[String, String],
@@ -157,7 +167,7 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
         }
         i += 1
       }
-      if (options != null) {
+      if ((options != null) && sortColumns.nonEmpty) {
         //Keep one valid record. else carbon data file will not generate
         writer.write(Array[String]("robot" + i, String.valueOf(i), String.valueOf(i.toDouble / 2)))
       }
@@ -436,6 +446,24 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
     }
 
     assert(!(new File(writerPath).exists()))
+    cleanTestData()
+  }
+
+  test("test create external table with all the records as bad record with redirect") {
+    var options = Map("bAd_RECords_action" -> "REDIRECT").asJava
+    buildTestDataWithOptionsAndEmptySortColumn(3, options)
+    assert(new File(writerPath).exists())
+    sql("DROP TABLE IF EXISTS sdkOutputTable")
+    // when one row is bad record and it it redirected.
+    // Empty carbon files must not create in no_sort flow
+    var exception = intercept[AnalysisException] {
+      sql(
+        s"""CREATE EXTERNAL TABLE sdkOutputTable STORED BY
+           |'carbondata' LOCATION
+           |'$writerPath' """.stripMargin)
+    }
+    assert(exception.getMessage()
+      .contains("Invalid table path provided"))
     cleanTestData()
   }
 
@@ -2426,7 +2454,6 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
          |'$writerPath' """.stripMargin)
     val df = sql("describe formatted sdkTable")
     checkExistence(df, true, "Local Dictionary Enabled true")
-    checkExistence(df, true, "Inverted Index Columns name")
     FileUtils.deleteDirectory(new File(writerPath))
   }
 
@@ -2471,7 +2498,10 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
     FileUtils.deleteDirectory(new File(writerPath))
   }
 
-  test("test inverted index column by API") {
+  // Inverted index display is based on sort_scope, now by default sort_scope is no_sort.
+  // Hence inverted index will not be displayed for external table
+  // as we don't support table-properties inferring
+  ignore("test inverted index column by API") {
     FileUtils.deleteDirectory(new File(writerPath))
     val builder = CarbonWriter.builder
       .sortBy(Array[String]("name")).withBlockSize(12).enableLocalDictionary(true)
@@ -2488,6 +2518,72 @@ class TestNonTransactionalCarbonTable extends QueryTest with BeforeAndAfterAll {
     checkExistence(df, true, "Inverted Index Columns name")
     checkAnswer(sql("select count(*) from sdkTable"), Seq(Row(1)))
     FileUtils.deleteDirectory(new File(writerPath))
+  }
+
+  test("test Local Dictionary with Default") {
+    FileUtils.deleteDirectory(new File(writerPath))
+    val builder = CarbonWriter.builder
+      .sortBy(Array[String]("name")).withBlockSize(12)
+      .uniqueIdentifier(System.currentTimeMillis).taskNo(System.nanoTime).outputPath(writerPath).writtenBy("TestNonTransactionalCarbonTable")
+    generateCarbonData(builder)
+    assert(FileFactory.getCarbonFile(writerPath).exists())
+    assert(testUtil.checkForLocalDictionary(testUtil.getDimRawChunk(0,writerPath)))
+    sql("DROP TABLE IF EXISTS sdkTable")
+    sql(
+      s"""CREATE EXTERNAL TABLE sdkTable STORED BY 'carbondata' LOCATION
+         |'$writerPath' """.stripMargin)
+    val descLoc = sql("describe formatted sdkTable").collect
+    descLoc.find(_.get(0).toString.contains("Local Dictionary Enabled")) match {
+      case Some(row) => assert(row.get(1).toString.contains("true"))
+      case None => assert(false)
+    }
+    FileUtils.deleteDirectory(new File(writerPath))
+  }
+
+  test("Test with long string columns with 1 MB pageSize") {
+    FileUtils.deleteDirectory(new File(writerPath))
+    // here we specify the long string column as varchar
+    val schema = new StringBuilder()
+      .append("[ \n")
+      .append("   {\"name\":\"string\"},\n")
+      .append("   {\"  address    \":\"varchar\"},\n")
+      .append("   {\"age\":\"int\"},\n")
+      .append("   {\"note\":\"varchar\"}\n")
+      .append("]")
+      .toString()
+    val builder = CarbonWriter.builder()
+    val writer = builder.outputPath(writerPath).withCsvInput(Schema.parseJson(schema))
+      .withPageSizeInMb(1)
+      .writtenBy("TestCreateTableUsingSparkCarbonFileFormat").build()
+    val totalRecordsNum = 10
+    for (i <- 0 until totalRecordsNum) {
+      // write a varchar with 250,000 length
+      writer
+        .write(Array[String](s"name_$i",
+          RandomStringUtils.randomAlphabetic(250000),
+          i.toString,
+          RandomStringUtils.randomAlphabetic(250000)))
+    }
+    writer.close()
+
+    // read footer and verify number of pages
+    val folder = FileFactory.getCarbonFile(writerPath)
+    val files = folder.listFiles(true)
+    import scala.collection.JavaConverters._
+    val dataFiles = files.asScala.filter(_.getName.endsWith(CarbonTablePath.CARBON_DATA_EXT))
+    dataFiles.foreach { dataFile =>
+      val fileReader = FileFactory
+        .getFileHolder(FileFactory.getFileType(dataFile.getPath))
+      val buffer = fileReader
+        .readByteBuffer(FileFactory.getUpdatedFilePath(dataFile.getPath), dataFile.getSize - 8, 8)
+      val footerReader = new CarbonFooterReaderV3(
+        dataFile.getAbsolutePath,
+        buffer.getLong)
+      val footer = footerReader.readFooterVersion3
+      // without page_size configuration there will be only 1 page, now it will be more.
+      assert(footer.getBlocklet_info_list3.get(0).number_number_of_pages != 1)
+    }
+
   }
 
   def generateCarbonData(builder :CarbonWriterBuilder): Unit ={

@@ -204,7 +204,8 @@ public abstract class ColumnPage {
             new ColumnPageEncoderMeta(columnSpec, dataType, compressorName), pageSize);
       } else if (dataType == DataTypes.STRING
           || dataType == DataTypes.BYTE_ARRAY
-          || dataType == DataTypes.VARCHAR) {
+          || dataType == DataTypes.VARCHAR
+          || dataType == DataTypes.BINARY) {
         instance = new UnsafeVarLengthColumnPage(
             new ColumnPageEncoderMeta(columnSpec, dataType, compressorName), pageSize);
       } else {
@@ -231,7 +232,8 @@ public abstract class ColumnPage {
         instance = newDecimalPage(columnPageEncoderMeta, new byte[pageSize][]);
       } else if (dataType == DataTypes.STRING
           || dataType == DataTypes.BYTE_ARRAY
-          || dataType == DataTypes.VARCHAR) {
+          || dataType == DataTypes.VARCHAR
+          || dataType == DataTypes.BINARY) {
         instance = new SafeVarLengthColumnPage(columnPageEncoderMeta, pageSize);
       } else {
         throw new RuntimeException("Unsupported data dataType: " + dataType);
@@ -426,6 +428,9 @@ public abstract class ColumnPage {
     } else if (dataType == DataTypes.FLOAT) {
       putFloat(rowId, (float) value);
       statsCollector.update((float) value);
+    } else if (dataType == DataTypes.BINARY) {
+      putBytes(rowId, (byte[]) value);
+      statsCollector.update((byte[]) value);
     } else {
       throw new RuntimeException("unsupported data type: " + dataType);
     }
@@ -746,7 +751,7 @@ public abstract class ColumnPage {
     } else if (dataType == DataTypes.BYTE_ARRAY) {
       return getLVFlattenedBytePage().length;
     } else {
-      throw new UnsupportedOperationException("unsupport compress column page: " + dataType);
+      throw new UnsupportedOperationException("unsupported compress column page: " + dataType);
     }
   }
 
@@ -782,10 +787,12 @@ public abstract class ColumnPage {
         || columnPageEncoderMeta.getColumnSpec().getColumnType() == ColumnType.PLAIN_LONG_VALUE
         || columnPageEncoderMeta.getColumnSpec().getColumnType() == ColumnType.PLAIN_VALUE)) {
       return compressor.compressByte(getComplexParentFlattenedBytePage());
+    } else if (dataType == DataTypes.BINARY) {
+      return getLVFlattenedBytePage();
     } else if (dataType == DataTypes.BYTE_ARRAY) {
       return compressor.compressByte(getLVFlattenedBytePage());
     } else {
-      throw new UnsupportedOperationException("unsupport compress column page: " + dataType);
+      throw new UnsupportedOperationException("unsupported compress column page: " + dataType);
     }
   }
 
@@ -851,7 +858,7 @@ public abstract class ColumnPage {
           CarbonCommonConstants.INT_SIZE_IN_BYTE, meta.getCompressorName());
     } else {
       throw new UnsupportedOperationException(
-          "unsupport uncompress column page: " + meta.getStoreDataType());
+          "unsupported uncompress column page: " + meta.getStoreDataType());
     }
   }
 

@@ -80,7 +80,7 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
     String tableName = tableIdentifier.getTableName();
     try {
       CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-          .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+          .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
               System.currentTimeMillis());
       int i = 0;
       String[] storeLocation = getStoreLocation();
@@ -116,7 +116,7 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
       if (e.getCause() instanceof BadRecordFoundException) {
         throw new BadRecordFoundException(e.getCause().getMessage());
       }
-      throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage());
+      throw new CarbonDataLoadingException("There is an unexpected error: " + e.getMessage(), e);
     }
     return null;
   }
@@ -145,10 +145,10 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
       }
     }
     CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-        .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+        .recordDictionaryValue2MdkAdd2FileTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
             System.currentTimeMillis());
     CarbonTimeStatisticsFactory.getLoadStatisticsInstance()
-        .recordMdkGenerateTotalTime(CarbonTablePath.DEPRECATED_PATITION_ID,
+        .recordMdkGenerateTotalTime(CarbonTablePath.DEPRECATED_PARTITION_ID,
             System.currentTimeMillis());
     if (null != exception) {
       throw exception;
@@ -160,7 +160,7 @@ public class DataWriterBatchProcessorStepImpl extends AbstractDataLoadProcessorS
       try {
         dataHandler.closeHandler();
       } catch (Exception e) {
-        LOGGER.error(e);
+        LOGGER.error(e.getMessage(), e);
         throw new CarbonDataLoadingException(
             "There is an unexpected error while closing data handler", e);
       }

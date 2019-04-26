@@ -103,7 +103,7 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
         new ArrayList<Dictionary>(dictionaryColumnUniqueIdentifiers.size());
     List<Future<Dictionary>> taskSubmitList =
         new ArrayList<>(dictionaryColumnUniqueIdentifiers.size());
-    ExecutorService executorService = Executors.newFixedThreadPool(thread_pool_size);
+    ExecutorService executorService = Executors.newFixedThreadPool(threadPoolSize);
     for (final DictionaryColumnUniqueIdentifier uniqueIdent : dictionaryColumnUniqueIdentifiers) {
       taskSubmitList.add(executorService.submit(new Callable<Dictionary>() {
         @Override public Dictionary call() throws IOException {
@@ -115,7 +115,7 @@ public class ReverseDictionaryCache<K extends DictionaryColumnUniqueIdentifier,
       executorService.shutdown();
       executorService.awaitTermination(2, TimeUnit.HOURS);
     } catch (InterruptedException e) {
-      LOGGER.error("Error loading the dictionary: " + e.getMessage());
+      LOGGER.error("Error loading the dictionary: " + e.getMessage(), e);
     }
     for (int i = 0; i < taskSubmitList.size(); i++) {
       try {

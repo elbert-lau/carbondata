@@ -28,16 +28,16 @@ import org.apache.carbondata.core.metadata.datatype.DecimalType;
 import org.apache.carbondata.core.metadata.datatype.StructField;
 import org.apache.carbondata.core.scan.result.vector.impl.CarbonColumnVectorImpl;
 import org.apache.carbondata.presto.readers.BooleanStreamReader;
+import org.apache.carbondata.presto.readers.ByteStreamReader;
 import org.apache.carbondata.presto.readers.DecimalSliceStreamReader;
 import org.apache.carbondata.presto.readers.DoubleStreamReader;
+import org.apache.carbondata.presto.readers.FloatStreamReader;
 import org.apache.carbondata.presto.readers.IntegerStreamReader;
 import org.apache.carbondata.presto.readers.LongStreamReader;
 import org.apache.carbondata.presto.readers.ObjectStreamReader;
 import org.apache.carbondata.presto.readers.ShortStreamReader;
 import org.apache.carbondata.presto.readers.SliceStreamReader;
 import org.apache.carbondata.presto.readers.TimestampStreamReader;
-
-import com.facebook.presto.spi.block.Block;
 
 public class CarbonVectorBatch {
 
@@ -63,8 +63,7 @@ public class CarbonVectorBatch {
     DataType[] dataTypes = readSupport.getDataTypes();
 
     for (int i = 0; i < schema.length; ++i) {
-      columns[i] = createDirectStreamReader(maxRows, dataTypes[i], schema[i], dictionaries[i],
-          readSupport.getDictionaryBlock(i));
+      columns[i] = createDirectStreamReader(maxRows, dataTypes[i], schema[i], dictionaries[i]);
     }
   }
 
@@ -78,8 +77,8 @@ public class CarbonVectorBatch {
     }
   }
 
-  private CarbonColumnVectorImpl createDirectStreamReader(int batchSize, DataType dataType,
-      StructField field, Dictionary dictionary, Block dictionaryBlock) {
+  public static CarbonColumnVectorImpl createDirectStreamReader(int batchSize, DataType dataType,
+      StructField field, Dictionary dictionary) {
     if (dataType == DataTypes.BOOLEAN) {
       return new BooleanStreamReader(batchSize, field.getDataType(), dictionary);
     } else if (dataType == DataTypes.SHORT) {
@@ -92,10 +91,19 @@ public class CarbonVectorBatch {
       return new LongStreamReader(batchSize, field.getDataType(), dictionary);
     } else if (dataType == DataTypes.DOUBLE) {
       return new DoubleStreamReader(batchSize, field.getDataType(), dictionary);
-    } else if (dataType == DataTypes.STRING) {
-      return new SliceStreamReader(batchSize, field.getDataType(), dictionaryBlock);
+    } else if (dataType == DataTypes.FLOAT) {
+      return new FloatStreamReader(batchSize, field.getDataType(), dictionary);
+    } else if (dataType == DataTypes.BYTE) {
+      return new ByteStreamReader(batchSize, field.getDataType(), dictionary);
+    } else if (dataType == DataTypes.STRING || dataType == DataTypes.VARCHAR) {
+      return new SliceStreamReader(batchSize, field.getDataType(), dictionary);
     } else if (DataTypes.isDecimal(dataType)) {
-      return new DecimalSliceStreamReader(batchSize, (DecimalType) field.getDataType(), dictionary);
+      if (dataType instanceof DecimalType) {
+        return new DecimalSliceStreamReader(batchSize, field.getDataType(), (DecimalType) dataType,
+            dictionary);
+      } else {
+        return null;
+      }
     } else {
       return new ObjectStreamReader(batchSize, field.getDataType());
     }

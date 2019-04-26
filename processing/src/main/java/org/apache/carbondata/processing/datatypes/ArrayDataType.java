@@ -55,7 +55,7 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
   /**
    * parent column name
    */
-  private String parentname;
+  private String parentName;
 
   /**
    * output array index
@@ -72,6 +72,9 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
    */
   private int dataCounter;
 
+  /* flat complex datatype length, including the children*/
+  private int depth;
+
   private ArrayDataType(int outputArrayIndex, int dataCounter, GenericDataType children,
       String name) {
     this.outputArrayIndex = outputArrayIndex;
@@ -84,26 +87,26 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
   /**
    * constructor
    * @param name
-   * @param parentname
+   * @param parentName
    * @param columnId
    */
-  public ArrayDataType(String name, String parentname, String columnId) {
+  public ArrayDataType(String name, String parentName, String columnId) {
     this.name = name;
-    this.parentname = parentname;
+    this.parentName = parentName;
     this.columnId = columnId;
   }
 
   /**
    * constructor
    * @param name
-   * @param parentname
+   * @param parentName
    * @param columnId
    * @param isDictionaryColumn
    */
-  public ArrayDataType(String name, String parentname, String columnId,
+  public ArrayDataType(String name, String parentName, String columnId,
       Boolean isDictionaryColumn) {
     this.name = name;
-    this.parentname = parentname;
+    this.parentName = parentName;
     this.columnId = columnId;
     this.isDictionaryColumn = isDictionaryColumn;
   }
@@ -113,7 +116,7 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
    */
   @Override
   public void addChildren(GenericDataType children) {
-    if (this.getName().equals(children.getParentname())) {
+    if (this.getName().equals(children.getParentName())) {
       this.children = children;
     } else {
       this.children.addChildren(children);
@@ -140,8 +143,8 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
    * set parent name
    */
   @Override
-  public String getParentname() {
-    return parentname;
+  public String getParentName() {
+    return parentName;
   }
 
   /*
@@ -322,4 +325,16 @@ public class ArrayDataType implements GenericDataType<ArrayObject> {
             name, false));
     children.getComplexColumnInfo(columnInfoList);
   }
+
+  @Override
+  public int getDepth() {
+    if (depth == 0) {
+      // calculate only one time
+      List<ComplexColumnInfo> complexColumnInfoList = new ArrayList<>();
+      getComplexColumnInfo(complexColumnInfoList);
+      depth = complexColumnInfoList.size();
+    }
+    return depth;
+  }
+
 }

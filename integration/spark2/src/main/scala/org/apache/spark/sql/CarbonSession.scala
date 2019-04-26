@@ -180,6 +180,7 @@ object CarbonSession {
         getValue("options", builder).asInstanceOf[scala.collection.mutable.HashMap[String, String]]
       val userSuppliedContext: Option[SparkContext] =
         getValue("userSuppliedContext", builder).asInstanceOf[Option[SparkContext]]
+      CarbonReflectionUtils.updateCarbonSerdeInfo()
 
       if (StringUtils.isNotBlank(metaStorePath)) {
         val hadoopConf = new Configuration()
@@ -263,7 +264,7 @@ object CarbonSession {
         // Register a successfully instantiated context to the singleton. This should be at the
         // end of the class definition so that the singleton is updated only if there is no
         // exception in the construction of the instance.
-        CarbonToSparkAdapater.addSparkListener(sparkContext)
+        CarbonToSparkAdapter.addSparkListener(sparkContext)
         session.streams.addListener(new CarbonStreamingQueryListener(session))
       }
 

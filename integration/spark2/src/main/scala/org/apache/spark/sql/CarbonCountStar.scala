@@ -52,7 +52,7 @@ case class CarbonCountStar(
       .setConfigurationToCurrentThread(sparkSession.sessionState.newHadoopConf())
     val absoluteTableIdentifier = carbonTable.getAbsoluteTableIdentifier
     val (job, tableInputFormat) = createCarbonInputFormat(absoluteTableIdentifier)
-    CarbonInputFormat.setQuerySegment(job.getConfiguration, absoluteTableIdentifier)
+    CarbonInputFormat.setQuerySegment(job.getConfiguration, carbonTable)
 
     // get row count
     val rowCount = CarbonUpdateUtil.getRowCount(
@@ -64,7 +64,7 @@ case class CarbonCountStar(
           sparkSession,
           TableIdentifier(
             carbonTable.getTableName,
-            Some(carbonTable.getDatabaseName))).map(_.asJava).orNull),
+            Some(carbonTable.getDatabaseName))).map(_.asJava).orNull, false),
       carbonTable)
     val valueRaw =
       attributesRaw.head.dataType match {
